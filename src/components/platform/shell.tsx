@@ -17,6 +17,7 @@ import {
   Search,
 } from "lucide-react";
 import { RenMark } from "@/components/ui/wordmark";
+import { UserMenu } from "@/components/auth/user-menu";
 import { cn } from "@/lib/utils";
 
 const sections: {
@@ -113,7 +114,8 @@ export function PlatformShell({
           ))}
         </nav>
 
-        <div className="border-t border-carbon-line p-3">
+        <div className="space-y-0.5 border-t border-carbon-line p-3">
+          <UserMenu />
           <Link
             href="/"
             className="flex items-center gap-2.5 rounded-lg px-2 py-[7px] text-[13px] text-dusk-muted transition-colors duration-200 hover:bg-carbon-raised hover:text-dusk"
