@@ -29,3 +29,7 @@ yarn-error.log*
 
 # vercel
 .vercel
+
+# reference-only material (existing Ren Code app, read for understanding,
+# never committed or built into this project)
+/_reference/
