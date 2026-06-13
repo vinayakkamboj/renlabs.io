@@ -17,8 +17,12 @@ import {
   randomBytes,
   timingSafeEqual,
 } from "crypto";
-import type { ReadonlyRequestCookies } from "next/dist/server/web/spec-extension/adapters/request-cookies";
 import type { NextResponse } from "next/server";
+
+/** Structural cookie reader satisfied by both `await cookies()` and request cookies. */
+interface CookieReader {
+  get(name: string): { value: string } | undefined;
+}
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -158,7 +162,7 @@ export function statesMatch(
 /** Read and decrypt the GitHub session from the request cookies. Returns null
  *  if absent or tampered. */
 export function readGitHubSession(
-  cookieStore: ReadonlyRequestCookies,
+  cookieStore: CookieReader,
 ): GitHubSession | null {
   try {
     const value = cookieStore.get(SESSION_COOKIE)?.value;
@@ -226,7 +230,7 @@ export function clearStateCookie(response: NextResponse): void {
 /** Read and decode the OAuth state from the request cookies. Returns null if
  *  absent or tampered. */
 export function readStateCookie(
-  cookieStore: ReadonlyRequestCookies,
+  cookieStore: CookieReader,
 ): GitHubOAuthState | null {
   try {
     const value = cookieStore.get(STATE_COOKIE)?.value;

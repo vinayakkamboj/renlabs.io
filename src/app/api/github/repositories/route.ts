@@ -40,7 +40,7 @@ interface GitHubRepo {
 
 export async function GET() {
   const cookieStore = await cookies();
-  const session = readGitHubSession(cookieStore as any);
+  const session = readGitHubSession(cookieStore);
 
   if (!session) {
     return NextResponse.json(
@@ -91,7 +91,7 @@ export async function GET() {
     }));
 
     return NextResponse.json({ repositories: mapped });
-  } catch (err) {
+  } catch {
     return NextResponse.json(
       { error: "Failed to fetch repositories" },
       { status: 500 },

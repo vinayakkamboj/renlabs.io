@@ -53,7 +53,7 @@ export async function GET(request: Request) {
 
   // ── 1. Read CSRF state from cookie ────────────────────────────────────────
   const cookieStore = await cookies();
-  const cookieState = readStateCookie(cookieStore as any);
+  const cookieState = readStateCookie(cookieStore);
   if (!cookieState) {
     return errorRedirect("missing_state");
   }

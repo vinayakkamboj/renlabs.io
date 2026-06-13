@@ -24,7 +24,7 @@ import { isGitHubConfigured, readGitHubSession } from "@/lib/github/session";
 export async function GET() {
   const configured = isGitHubConfigured();
   const cookieStore = await cookies();
-  const session = readGitHubSession(cookieStore as any);
+  const session = readGitHubSession(cookieStore);
 
   return NextResponse.json({
     configured,

@@ -19,7 +19,7 @@ import { readGitHubSession, clearSessionCookie } from "@/lib/github/session";
 
 export async function POST() {
   const cookieStore = await cookies();
-  const session = readGitHubSession(cookieStore as any);
+  const session = readGitHubSession(cookieStore);
 
   const response = NextResponse.json({ ok: true });
   clearSessionCookie(response);

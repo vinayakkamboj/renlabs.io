@@ -2,12 +2,54 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { FolderGit2 } from "lucide-react";
 import { PageHeader, EmptyState, DataTable, StatusBadge } from "@/components/platform/widgets";
-import { emptyWorkspace } from "@/lib/data/workspace";
+import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
 
 export const metadata: Metadata = { title: "Projects" };
+export const dynamic = "force-dynamic";
 
-export default function ProjectsPage() {
-  const { projects } = emptyWorkspace;
+function relativeTime(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  if (diff < 60_000) return "just now";
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+  return `${Math.floor(diff / 86_400_000)}d ago`;
+}
+
+export default async function ProjectsPage() {
+  let projects: Array<{
+    id: string;
+    name: string;
+    kind: string;
+    status: string;
+    description: string | null;
+    repository_id: string | null;
+    updated_at: string;
+  }> = [];
+
+  if (isSupabaseConfigured()) {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      redirect("/login");
+    }
+
+    try {
+      const { data } = await supabase
+        .from("projects")
+        .select("id, name, kind, status, description, repository_id, updated_at")
+        .eq("user_id", user.id)
+        .order("updated_at", { ascending: false });
+
+      projects = data ?? [];
+    } catch {
+      // Table may not exist yet in development
+      projects = [];
+    }
+  }
 
   return (
     <>
@@ -33,13 +75,18 @@ export default function ProjectsPage() {
         />
       ) : (
         <DataTable
-          headers={["Project", "Type", "Status", "Repository", "Updated"]}
+          headers={["Project", "Type", "Status", "Updated"]}
           rows={projects.map((p) => [
-            <span key="n" className="font-medium text-dusk">{p.name}</span>,
+            <Link
+              key="n"
+              href={`/dashboard/projects/${p.id}`}
+              className="font-medium text-dusk hover:text-brass transition-colors"
+            >
+              {p.name}
+            </Link>,
             p.kind === "new" ? "New build" : "Repository",
             <StatusBadge key="s" status={p.status} />,
-            p.repoFullName ?? "—",
-            p.updatedAt,
+            relativeTime(p.updated_at),
           ])}
         />
       )}
