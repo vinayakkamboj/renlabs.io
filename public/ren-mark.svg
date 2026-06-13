@@ -1,17 +1,10 @@
 <svg viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!--
-    Ren mark — open reasoning loop.
-    Center (256, 256), radius 180. Gap: 30° symmetric around 3 o'clock (±15°).
-    Lower arc start  : (429.86, 302.58) = +15° from 3 o'clock
-    Upper arc end/dot: (429.86, 209.42) = −15° from 3 o'clock
-    Dot radius = strokeWidth/2 = 15 — flush optical cap.
-  -->
   <rect width="512" height="512" rx="114" fill="#faf8f3"/>
   <path
-    d="M429.86 302.58A180 180 0 1 0 429.86 209.42"
+    d="M439.5 198.4A192 192 0 1 0 448 256"
     stroke="#1b1a17"
-    stroke-width="30"
+    stroke-width="41.6"
     stroke-linecap="round"
   />
-  <circle cx="429.86" cy="209.42" r="15" fill="#1b1a17"/>
+  <circle cx="448" cy="150.4" r="30.4" fill="#1b1a17"/>
 </svg>
