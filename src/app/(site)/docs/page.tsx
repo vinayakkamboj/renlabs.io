@@ -28,11 +28,11 @@ export default function GettingStartedPage() {
 
       <DocH2>The core idea</DocH2>
       <DocP>
-        Most code assistants generate isolated snippets. Ren Code is built
-        around Astra, an intelligence system that reads a repository as a whole
-        — its architecture, dependencies, and conventions — and reasons about
-        changes the way an engineer on your team would. The output is a pull
-        request you review, not a silent edit.
+        Most code assistants generate isolated snippets. Ren Code is powered by
+        Astra, Ren AI&apos;s flagship language model, which reads a repository as a
+        whole — its architecture, dependencies, and conventions — and reasons
+        about changes the way an engineer on your team would. The output is a
+        pull request you review, not a silent edit.
       </DocP>
 
       <DocH2>Two ways to work</DocH2>

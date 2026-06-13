@@ -64,9 +64,9 @@ export function Hero() {
           {...enter(0.22)}
           className="mt-8 max-w-[58ch] text-lede text-graphite text-pretty"
         >
-          Powered by Astra, an advanced software engineering intelligence
-          system developed by Ren AI to understand repositories, reason about
-          architecture, and execute complex development tasks.
+          Powered by Astra, Ren AI&apos;s flagship language model — built to
+          understand repositories, reason about architecture, and execute
+          complex development tasks.
         </motion.p>
 
         <motion.div {...enter(0.32)} className="mt-12 flex flex-wrap items-center gap-4">

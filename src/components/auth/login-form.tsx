@@ -105,6 +105,17 @@ export function LoginForm() {
       provider,
       options: {
         redirectTo: `${location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
+        // Force Google to always show the account chooser + consent screen,
+        // instead of silently signing the user straight through when they are
+        // already logged into Google and have approved the app before.
+        ...(provider === "google"
+          ? {
+              queryParams: {
+                prompt: "select_account consent",
+                access_type: "offline",
+              },
+            }
+          : {}),
         ...(provider === "github" ? { scopes: "read:user user:email" } : {}),
       },
     });

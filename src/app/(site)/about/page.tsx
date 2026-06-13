@@ -7,7 +7,7 @@ import { PageIntro } from "@/components/site/page-intro";
 export const metadata: Metadata = {
   title: "About — Ren AI",
   description:
-    "Ren AI is building Astra, an advanced software engineering intelligence system, and Ren Code, the product powered by it.",
+    "Ren AI is an AI research company building Astra, its flagship language model, and Ren Code, the first product powered by it.",
 };
 
 const values = [
@@ -54,13 +54,13 @@ export default function AboutPage() {
               What we are building.
             </h2>
             <p className="mt-6 text-lede text-graphite text-pretty">
-              Ren AI is a software engineering intelligence company. Our core
-              work is Astra — an AI system built specifically for understanding
-              repositories, reasoning about architecture, generating code, and
-              creating pull requests that hold up under review.
+              Ren AI is an AI research company. Our core work is Astra — our
+              flagship language model, built for reasoning, software
+              engineering, long-context understanding, and agentic workflows.
+              Astra is the intelligence layer powering every Ren AI product.
             </p>
             <p className="mt-5 text-[15px] leading-relaxed text-graphite text-pretty">
-              Astra powers Ren Code, our flagship product: AI software
+              Ren Code is the first product powered by Astra: AI software
               engineering that reads your codebase before it changes a line of
               it. You describe a change. Ren Code produces a pull request you
               review. You stay in control of what merges.
