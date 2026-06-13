@@ -5,6 +5,14 @@ import { cn } from "@/lib/utils";
  * left incomplete. Drawn, not generated.
  */
 export function RenMark({ className }: { className?: string }) {
+  /*
+   * Geometry: center (16,16), radius 11.5, gap of 30° symmetric around
+   * 3 o'clock (±15°). Dot sits exactly at the upper arc terminal with
+   * radius = strokeWidth/2 — a flush, optical cap, not a floating blob.
+   *
+   * Lower start  : (27.11, 18.98) = 15° below 3 o'clock
+   * Upper end/dot: (27.11, 13.02) = 15° above 3 o'clock
+   */
   return (
     <svg
       viewBox="0 0 32 32"
@@ -13,12 +21,12 @@ export function RenMark({ className }: { className?: string }) {
       className={cn("size-6", className)}
     >
       <path
-        d="M27.5 12.4A12 12 0 1 0 28 16"
+        d="M27.11 18.98A11.5 11.5 0 1 0 27.11 13.02"
         stroke="currentColor"
-        strokeWidth="2.6"
+        strokeWidth="2.4"
         strokeLinecap="round"
       />
-      <circle cx="28" cy="9.4" r="1.9" fill="currentColor" />
+      <circle cx="27.11" cy="13.02" r="1.2" fill="currentColor" />
     </svg>
   );
 }
