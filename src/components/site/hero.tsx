@@ -41,37 +41,45 @@ export function Hero() {
             <span className="size-1.5 animate-pulse rounded-full bg-bronze" />
           </span>
           <p className="font-mono text-[11px] uppercase tracking-eyebrow text-bronze">
-            Ren AI · in active development
+            Ren AI · Software engineering intelligence
           </p>
         </motion.div>
 
         <motion.h1
           {...enter(0.08)}
-          className="mt-8 max-w-[16ch] font-serif text-display-xl font-normal text-ink"
+          className="mt-8 font-serif text-display-xl font-normal text-ink"
         >
-          AI software engineering that <em className="text-bronze-deep">understands your code</em>.
+          Ren Code
         </motion.h1>
 
         <motion.p
-          {...enter(0.18)}
-          className="mt-8 max-w-[54ch] text-lede text-graphite text-pretty"
+          {...enter(0.14)}
+          className="mt-6 max-w-[30ch] font-serif text-headline font-normal text-ink-soft text-balance"
         >
-          Ren Code builds new applications and continues development on existing
-          repositories — reading architecture, reasoning over dependencies, and
-          opening pull requests you can actually review.
+          AI software engineering that{" "}
+          <em className="text-bronze-deep">understands your codebase</em>.
         </motion.p>
 
-        <motion.div {...enter(0.28)} className="mt-12 flex flex-wrap items-center gap-4">
+        <motion.p
+          {...enter(0.22)}
+          className="mt-8 max-w-[58ch] text-lede text-graphite text-pretty"
+        >
+          Powered by Astra, an advanced software engineering intelligence
+          system developed by Ren AI to understand repositories, reason about
+          architecture, and execute complex development tasks.
+        </motion.p>
+
+        <motion.div {...enter(0.32)} className="mt-12 flex flex-wrap items-center gap-4">
           <Button href="/dashboard" size="lg">
             Start building
           </Button>
-          <Button href="/code" variant="outline" size="lg">
-            How Ren Code works
+          <Button href="/docs" variant="outline" size="lg">
+            Documentation
             <ArrowUpRight className="size-4 text-graphite transition-transform duration-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
           </Button>
         </motion.div>
 
-        <motion.div {...enter(0.42)} className="mt-24 md:mt-32">
+        <motion.div {...enter(0.46)} className="mt-24 md:mt-32">
           <div className="rule" />
           <div className="grid gap-x-8 gap-y-8 pt-8 sm:grid-cols-2">
             <Link href="/code#new-project" className="group block">

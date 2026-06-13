@@ -1,73 +1,96 @@
 /**
- * The current Ren AI research model. Ren AI is in active development; this is
- * the single model under fine-tuning, not a lineage of shipped releases.
+ * Astra — Ren AI's software engineering intelligence system, the technology
+ * that powers Ren Code. Presented as a whole-system intelligence, not a code
+ * snippet generator. No benchmark claims; progress described honestly.
  */
 
 export const astra = {
-  codename: "Astra",
-  status: "Active Fine-Tuning",
-  base: "Open-weight foundation (Qwen3.5 family)",
-  approach: "QLoRA fine-tuning on curated software-engineering data",
+  name: "Astra",
+  status: "Actively evolving",
+  tagline: "Ren AI's advanced software engineering intelligence system.",
   summary:
-    "Astra is the model we are building Ren Code on. It is being fine-tuned for software engineering — reading repositories, reasoning over architecture, and producing changes that hold up under review.",
+    "Astra is Ren AI's advanced software engineering intelligence system — developed specifically for repository understanding, architectural reasoning, code generation, pull request creation, software maintenance, and long-context engineering workflows.",
+  /** Two paragraphs that position Astra against ordinary code generation. */
+  description: [
+    "Astra has been extensively trained, evaluated, refined, and optimized for real-world software engineering tasks.",
+    "Unlike traditional code generation systems, Astra is designed to understand software systems as a whole rather than generating isolated snippets of code.",
+  ],
+  /** The intent, stated plainly. */
+  mission: [
+    "Astra continuously evolves through research, evaluation, and real-world engineering workflows.",
+    "Our goal is not simply to generate code. Our goal is to create software engineering intelligence capable of understanding and improving entire software systems.",
+  ],
   focusAreas: [
-    {
-      title: "Coding",
-      detail:
-        "Synthesis and repair across languages, evaluated on held-out problems the model never trains on.",
-    },
-    {
-      title: "Software Engineering",
-      detail:
-        "Resolving real tasks end-to-end inside a working repository, not isolated function puzzles.",
-    },
     {
       title: "Repository Understanding",
       detail:
-        "Architecture, dependencies, and conventions of a codebase — the context that makes a change correct.",
+        "Astra reads an entire repository — its architecture, dependencies, and conventions — and reasons about it as one connected system.",
+    },
+    {
+      title: "Architecture Reasoning",
+      detail:
+        "Understanding how a system fits together: its boundaries, data flows, and the decisions that shaped it.",
+    },
+    {
+      title: "Code Generation",
+      detail:
+        "Producing changes that read like they belong — consistent with the patterns and idioms already in the codebase.",
+    },
+    {
+      title: "Pull Request Creation",
+      detail:
+        "Opening reviewable pull requests with a clear account of what changed and why, ready for your team.",
+    },
+    {
+      title: "Software Maintenance",
+      detail:
+        "Refactoring, repairing, and evolving existing systems while preserving the behavior that already works.",
     },
     {
       title: "Agentic Development",
       detail:
-        "Planning multi-step changes, running tests, and verifying its own work before returning it.",
+        "Planning multi-step work, running tests, and verifying results before returning them.",
     },
     {
-      title: "Long Context Reasoning",
+      title: "Long Context Engineering",
       detail:
-        "Holding whole codebases in context so changes are reasoned about globally, not file by file.",
+        "Holding large codebases in context so changes are reasoned about globally, not file by file.",
     },
   ],
-  /** Honest, qualitative phases — not invented benchmark numbers. */
+  /**
+   * How Astra develops — honest, qualitative stages, not invented benchmark
+   * numbers. Capability results arrive only with the harness that produces them.
+   */
   phases: [
     {
-      label: "Data curation",
+      label: "Training",
       state: "in-progress" as const,
       detail:
-        "Assembling and screening the fine-tuning corpus — code, reviewed diffs, and verified engineering traces.",
+        "Astra learns from large-scale software engineering signal — code, reviewed diffs, and verified engineering traces.",
     },
     {
-      label: "Identity & instruction tuning",
+      label: "Capability development",
       state: "in-progress" as const,
       detail:
-        "Teaching the model who it is and how it should reason, communicate, and admit uncertainty.",
+        "Deepening repository understanding, architectural reasoning, and end-to-end task resolution inside real codebases.",
     },
     {
-      label: "Capability fine-tuning",
+      label: "Evaluation",
       state: "next" as const,
       detail:
-        "Targeted training on repository understanding and end-to-end task resolution.",
+        "A fixed, contamination-screened suite run before and after every training cycle. No claim without a measurement.",
     },
     {
-      label: "Evaluation harness",
+      label: "Continuous refinement",
       state: "next" as const,
       detail:
-        "A fixed, contamination-screened suite run before and after every training run. No claim without a measurement.",
+        "Real-world engineering workflows feed back into training, so Astra improves where it is actually used.",
     },
     {
       label: "Private preview",
       state: "planned" as const,
       detail:
-        "Serving Astra inside Ren Code for a small group, against real repositories.",
+        "Serving Astra inside Ren Code for a small group, working against real repositories.",
     },
   ],
 };

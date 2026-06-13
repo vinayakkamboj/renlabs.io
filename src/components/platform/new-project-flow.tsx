@@ -66,7 +66,7 @@ export function NewProjectFlow() {
 
           <div className="mt-5 flex items-center justify-between gap-4 border-t border-carbon-line pt-4">
             <p className="text-[12px] text-dusk-faint">
-              Astra is in active fine-tuning — project generation activates with
+              Astra is actively evolving — project generation activates with
               the private preview.
             </p>
             <button

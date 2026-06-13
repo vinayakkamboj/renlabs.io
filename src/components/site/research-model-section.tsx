@@ -18,45 +18,24 @@ const stateDot: Record<string, string> = {
 
 export function ResearchModelSection() {
   return (
-    <section className="border-t border-line bg-paper py-28 md:py-36" id="research-model">
+    <section className="border-t border-line bg-paper py-28 md:py-36" id="astra">
       <Container>
-        <div className="grid gap-12 lg:grid-cols-[1fr_minmax(0,28rem)]">
+        <div className="grid gap-12 lg:grid-cols-[1fr_minmax(0,26rem)] lg:items-end">
           <SectionHeading
-            eyebrow="Current research model"
+            eyebrow="The model"
             title={
               <>
-                Astra. <em className="text-bronze-deep">In active fine-tuning.</em>
+                Powered by <em className="text-bronze-deep">Astra</em>.
               </>
             }
             lede={astra.summary}
           />
-
-          <Reveal delay={0.1} className="rounded-2xl border border-line bg-paper-raised p-7 shadow-lift">
-            <dl className="space-y-4">
-              <div className="flex items-baseline justify-between gap-4">
-                <dt className="font-mono text-[11px] uppercase tracking-[0.12em] text-graphite-soft">
-                  Codename
-                </dt>
-                <dd className="font-serif text-title text-ink">{astra.codename}</dd>
-              </div>
-              <div className="flex items-baseline justify-between gap-4 border-t border-line pt-4">
-                <dt className="font-mono text-[11px] uppercase tracking-[0.12em] text-graphite-soft">
-                  Status
-                </dt>
-                <dd className="flex items-center gap-2 text-[14px] font-medium text-bronze-deep">
-                  <span className="size-1.5 animate-pulse rounded-full bg-bronze" />
-                  {astra.status}
-                </dd>
-              </div>
-              <div className="flex items-baseline justify-between gap-4 border-t border-line pt-4">
-                <dt className="font-mono text-[11px] uppercase tracking-[0.12em] text-graphite-soft">
-                  Approach
-                </dt>
-                <dd className="max-w-[18ch] text-right text-[13.5px] text-ink-soft">
-                  {astra.approach}
-                </dd>
-              </div>
-            </dl>
+          <Reveal delay={0.1} className="space-y-5 lg:pb-2">
+            {astra.description.map((p) => (
+              <p key={p} className="max-w-[44ch] text-[15px] leading-relaxed text-graphite text-pretty">
+                {p}
+              </p>
+            ))}
           </Reveal>
         </div>
 
@@ -65,20 +44,29 @@ export function ResearchModelSection() {
           <h3 className="font-mono text-[11px] uppercase tracking-eyebrow text-bronze">
             Focus areas
           </h3>
-          <div className="mt-6 grid gap-px overflow-hidden rounded-2xl border border-line bg-line md:grid-cols-2 lg:grid-cols-5">
+          <div className="mt-6 grid gap-px overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-2 lg:grid-cols-3">
             {astra.focusAreas.map((f) => (
               <div key={f.title} className="bg-paper p-6">
                 <h4 className="font-serif text-[1.05rem] text-ink">{f.title}</h4>
                 <p className="mt-2.5 text-[13px] leading-relaxed text-graphite">{f.detail}</p>
               </div>
             ))}
+            <div className="flex flex-col justify-center gap-2 bg-paper-deep/50 p-6">
+              <span className="flex items-center gap-2 font-mono text-[10.5px] uppercase tracking-[0.12em] text-bronze-deep">
+                <span className="size-1.5 animate-pulse rounded-full bg-bronze" />
+                {astra.status}
+              </span>
+              <p className="text-[12.5px] leading-relaxed text-graphite-soft">
+                An intelligence system, not a snippet generator.
+              </p>
+            </div>
           </div>
         </Reveal>
 
-        {/* Development phases — honest, qualitative */}
+        {/* How Astra develops — honest, qualitative */}
         <Reveal delay={0.15} className="mt-16">
           <h3 className="font-mono text-[11px] uppercase tracking-eyebrow text-bronze">
-            Where we are
+            How Astra evolves
           </h3>
           <ol className="mt-6 space-y-1">
             {astra.phases.map((p) => (
@@ -100,10 +88,15 @@ export function ResearchModelSection() {
             ))}
             <li className="border-t border-line" />
           </ol>
-          <p className="mt-6 max-w-[64ch] text-[12.5px] leading-relaxed text-graphite-soft">
-            We publish progress as it is, not as we wish it were. Capability
-            claims will arrive with the evaluation harness that measures them —
-            no benchmark numbers before then.
+        </Reveal>
+
+        {/* Mission */}
+        <Reveal delay={0.15} className="mt-16 max-w-[64ch]">
+          <p className="font-serif text-headline font-normal text-ink text-balance">
+            {astra.mission[0]}
+          </p>
+          <p className="mt-5 text-[15px] leading-relaxed text-graphite text-pretty">
+            {astra.mission[1]}
           </p>
         </Reveal>
       </Container>

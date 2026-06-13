@@ -9,9 +9,10 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const nav = [
-  { href: "/code", label: "Ren Code" },
+  { href: "/code", label: "Products" },
   { href: "/research", label: "Research" },
-  { href: "/philosophy", label: "Philosophy" },
+  { href: "/docs", label: "Documentation" },
+  { href: "/api", label: "API" },
 ];
 
 export function SiteHeader() {

@@ -9,21 +9,22 @@ const columns: { heading: string; links: { label: string; href: string }[] }[] =
       { label: "Ren Code", href: "/code" },
       { label: "New project", href: "/code#new-project" },
       { label: "Existing repository", href: "/code#repository" },
-      { label: "GitHub integration", href: "/code#github" },
-      { label: "Dashboard", href: "/dashboard" },
+      { label: "Start building", href: "/dashboard" },
     ],
   },
   {
-    heading: "Research",
+    heading: "Developers",
     links: [
-      { label: "Astra model", href: "/research" },
-      { label: "Focus areas", href: "/research#focus" },
-      { label: "Roadmap", href: "/research#roadmap" },
+      { label: "Documentation", href: "/docs" },
+      { label: "Ren API", href: "/api" },
+      { label: "API reference", href: "/docs/api-reference" },
+      { label: "GitHub integration", href: "/docs/github-integration" },
     ],
   },
   {
     heading: "Company",
     links: [
+      { label: "Research · Astra", href: "/research" },
       { label: "Philosophy", href: "/philosophy" },
       { label: "Sign in", href: "/login" },
     ],

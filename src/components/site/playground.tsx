@@ -27,7 +27,7 @@ const cannedResponses: Omit<Turn, "id" | "role">[] = [
   },
   {
     content:
-      "A fair question to ask any model — and one I'd rather answer carefully than impressively. The honest answer today: Ren AI is in active development, and Astra, the model behind Ren Code, is still in fine-tuning. Capability and calibration numbers will be published alongside the evaluation harness that produces them — not before.",
+      "A fair question to ask any model — and one I'd rather answer carefully than impressively. The honest answer today: Ren AI is in active development, and Astra, the intelligence system behind Ren Code, is actively evolving. Capability and calibration numbers will be published alongside the evaluation harness that produces them — not before.",
     deliberation:
       "Considering how to explain calibration without overclaiming. The key distinction: a confidence score is only meaningful if it's been measured against outcomes. Citing the published paper keeps the claim checkable.",
     deliberationSeconds: 4.1,

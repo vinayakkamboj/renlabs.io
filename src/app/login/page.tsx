@@ -6,7 +6,7 @@ import { LoginForm } from "@/components/auth/login-form";
 
 export const metadata: Metadata = {
   title: "Sign in",
-  description: "Sign in to the Ren research platform.",
+  description: "Sign in to Ren Code — create a workspace, connect GitHub, and start building.",
   robots: { index: false, follow: false },
 };
 
@@ -18,11 +18,11 @@ export default function LoginPage() {
       </Link>
 
       <h1 className="mt-10 font-serif text-display font-normal text-ink">
-        Welcome back.
+        Start building.
       </h1>
-      <p className="mt-4 max-w-[40ch] text-center text-[15px] leading-relaxed text-graphite">
-        Sign in to reach the research platform. Access is for the Ren team —
-        the research itself is public.
+      <p className="mt-4 max-w-[42ch] text-center text-[15px] leading-relaxed text-graphite">
+        Sign in to Ren Code to create a workspace, connect a repository, and let
+        Astra do engineering you can review.
       </p>
 
       <div className="mt-10 w-full max-w-sm">
@@ -32,7 +32,7 @@ export default function LoginPage() {
       </div>
 
       <p className="mt-10 font-mono text-[10.5px] uppercase tracking-[0.12em] text-graphite-soft">
-        Ren AI · internal access
+        Ren AI · Ren Code
       </p>
     </div>
   );

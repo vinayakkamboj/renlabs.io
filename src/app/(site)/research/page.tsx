@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 export const metadata: Metadata = {
   title: "Research",
   description:
-    "Astra — the model Ren AI is currently fine-tuning for software engineering. Active development, published honestly.",
+    "Astra — Ren AI's software engineering intelligence system. Actively evolving, with progress published honestly.",
 };
 
 const stateLabel: Record<string, string> = {
@@ -27,32 +27,25 @@ export default function ResearchPage() {
   return (
     <>
       <PageIntro
-        eyebrow="Current research model"
+        eyebrow="The model behind Ren Code"
         title={
           <>
-            Astra. <em className="text-bronze-deep">Active fine-tuning.</em>
+            Powered by <em className="text-bronze-deep">Astra</em>.
           </>
         }
         lede={astra.summary}
       />
 
       <Container className="py-20 md:py-28">
-        {/* Status card */}
-        <Reveal className="grid gap-px overflow-hidden rounded-2xl border border-line bg-line md:grid-cols-3">
-          {[
-            { k: "Codename", v: astra.codename },
-            { k: "Status", v: astra.status, live: true },
-            { k: "Base", v: astra.base },
-          ].map((s) => (
-            <div key={s.k} className="bg-paper p-7">
-              <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-graphite-soft">
-                {s.k}
-              </p>
-              <p className="mt-3 flex items-center gap-2 font-serif text-title text-ink">
-                {s.live && <span className="size-1.5 animate-pulse rounded-full bg-bronze" />}
-                {s.v}
-              </p>
-            </div>
+        {/* Description */}
+        <Reveal className="max-w-[68ch]">
+          {astra.description.map((p) => (
+            <p
+              key={p}
+              className="mb-5 text-lede text-graphite text-pretty last:mb-0"
+            >
+              {p}
+            </p>
           ))}
         </Reveal>
 
@@ -61,16 +54,16 @@ export default function ResearchPage() {
           <Reveal>
             <h2 className="font-serif text-display font-normal text-ink">Focus areas</h2>
             <p className="mt-5 max-w-[54ch] text-lede text-graphite">
-              Astra is specialized, not general. Everything points at making
-              Ren Code a better engineer.
+              Astra is purpose-built for software engineering — every capability
+              points at understanding and improving entire software systems.
             </p>
           </Reveal>
           <div className="mt-12">
             {astra.focusAreas.map((f, i) => (
               <Reveal
                 key={f.title}
-                delay={Math.min(i * 0.05, 0.2)}
-                className="grid gap-4 border-t border-line py-8 md:grid-cols-[20rem_1fr] md:gap-10"
+                delay={Math.min(i * 0.04, 0.2)}
+                className="grid gap-4 border-t border-line py-8 md:grid-cols-[22rem_1fr] md:gap-10"
               >
                 <h3 className="font-serif text-title text-ink">{f.title}</h3>
                 <p className="max-w-[60ch] text-[15px] leading-relaxed text-graphite text-pretty">
@@ -82,12 +75,12 @@ export default function ResearchPage() {
           </div>
         </section>
 
-        {/* Roadmap */}
+        {/* How Astra evolves */}
         <section className="mt-20">
           <Reveal>
-            <h2 className="font-serif text-display font-normal text-ink">Where we are</h2>
+            <h2 className="font-serif text-display font-normal text-ink">How Astra evolves</h2>
             <p className="mt-5 max-w-[54ch] text-lede text-graphite">
-              A real development initiative, shown as it actually stands.
+              A real, ongoing research effort — shown as it actually stands.
             </p>
           </Reveal>
           <ol className="mt-12">
@@ -120,7 +113,17 @@ export default function ResearchPage() {
           </Reveal>
         </section>
 
-        <Reveal className="mt-20">
+        {/* Mission */}
+        <Reveal className="mt-20 max-w-[64ch]">
+          <p className="font-serif text-headline font-normal text-ink text-balance">
+            {astra.mission[0]}
+          </p>
+          <p className="mt-5 text-lede text-graphite text-pretty">
+            {astra.mission[1]}
+          </p>
+        </Reveal>
+
+        <Reveal className="mt-16">
           <Button href="/code" size="lg">
             See Ren Code
           </Button>

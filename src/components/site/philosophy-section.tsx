@@ -21,7 +21,7 @@ export const principles = [
   {
     n: "IV",
     title: "Honest about the stage",
-    body: "Ren AI is in active development, fine-tuning a single research model. We would rather show real progress than stage a finished story. The roadmap is the product right now.",
+    body: "Ren AI is in active development, building a single software engineering intelligence system. We would rather show real progress than stage a finished story. The roadmap is the product right now.",
   },
 ];
 

@@ -10,7 +10,7 @@ export function WorkflowsSection() {
     <section className="border-t border-line bg-paper py-28 md:py-36" id="workflows">
       <Container>
         <SectionHeading
-          eyebrow="Ren Code"
+          eyebrow="How Ren Code works"
           title={
             <>
               Two ways in. <em className="text-bronze-deep">One engineer.</em>
