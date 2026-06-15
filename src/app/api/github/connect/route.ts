@@ -58,8 +58,13 @@ export async function GET(request: Request) {
   const encodedState = encodeOAuthState(state);
 
   // ── 5. Build GitHub authorization URL ────────────────────────────────────
+  // `repo`     — full read/write on the connecting user's repos (create, push, manage)
+  // `workflow` — allow pushing files under .github/workflows (rejected otherwise)
+  // `read:user`/`user:email` — profile + email for the connection record
+  // Each user grants this for THEIR OWN account when they click Connect — GitHub
+  // has no mechanism to grant blanket access to other people's accounts.
   const scopes =
-    process.env.GITHUB_OAUTH_SCOPES ?? "repo read:user user:email";
+    process.env.GITHUB_OAUTH_SCOPES ?? "repo workflow read:user user:email";
 
   const githubUrl = new URL("https://github.com/login/oauth/authorize");
   githubUrl.searchParams.set("client_id", process.env.GITHUB_CLIENT_ID!);

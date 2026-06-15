@@ -26,6 +26,7 @@ import { FileTree } from "@/components/workspace/file-tree";
 import { EditorPanel } from "@/components/workspace/editor-panel";
 import { LivePreview } from "@/components/workspace/preview";
 import { InviteModal } from "@/components/workspace/invite-modal";
+import { GitHubPushModal } from "@/components/workspace/github-push-modal";
 import { useWorkspaceStore, loadPersisted } from "@/lib/builder/store";
 import { downloadProjectZip } from "@/lib/builder/download";
 import type { ProjectFile, BuildMessage } from "@/lib/builder/types";
@@ -54,6 +55,7 @@ export function WorkspaceShell({
   const [centerView, setCenterView] = useState<CenterView>("preview");
   const [ready, setReady] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [pushOpen, setPushOpen] = useState(false);
 
   useEffect(() => {
     const persisted = loadPersisted(projectId);
@@ -144,17 +146,17 @@ export function WorkspaceShell({
             label="Invite"
             onClick={() => setInviteOpen(true)}
           />
-          {repoFullName && (
-            <ToolbarButton
-              icon={<Github className="size-3.5" />}
-              label="Push"
-              onClick={() =>
-                toast.info("GitHub push coming soon", {
-                  description: "Auto-commit & push to your connected repo.",
-                })
+          <ToolbarButton
+            icon={<Github className="size-3.5" />}
+            label="Push"
+            onClick={() => {
+              if (!projectFiles.length) {
+                toast.error("Nothing to push yet — build something first");
+                return;
               }
-            />
-          )}
+              setPushOpen(true);
+            }}
+          />
         </div>
       </header>
 
@@ -208,6 +210,15 @@ export function WorkspaceShell({
         <InviteModal
           projectId={projectId}
           onClose={() => setInviteOpen(false)}
+        />
+      )}
+
+      {pushOpen && (
+        <GitHubPushModal
+          projectName={projectName}
+          files={projectFiles}
+          repoFullName={repoFullName}
+          onClose={() => setPushOpen(false)}
         />
       )}
     </div>
