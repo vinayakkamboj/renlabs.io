@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Coins, FolderGit2, Github, Sparkles, Users } from "lucide-react";
 import { StatusBadge } from "@/components/platform/widgets";
 import { ProjectCardActions } from "@/components/platform/project-card-actions";
+import { GitHubImportButton } from "@/components/platform/github-import-button";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import { getCreditsBalance, ensureCreditsAccount } from "@/lib/credits/server";
 import { redirect } from "next/navigation";
@@ -123,14 +124,17 @@ export default async function DashboardPage() {
 
       {/* Your Projects */}
       <section>
-        <div className="mb-5 flex items-center justify-between">
+        <div className="mb-5 flex items-center justify-between gap-3">
           <h1 className="font-serif text-[1.5rem] text-dusk">Your Projects</h1>
-          <Link
-            href="/dashboard/projects/new"
-            className="flex h-8 items-center gap-1.5 rounded-lg bg-brass px-3 text-[12.5px] font-medium text-carbon transition-colors hover:bg-brass-deep"
-          >
-            + New project
-          </Link>
+          <div className="flex items-center gap-2">
+            <GitHubImportButton />
+            <Link
+              href="/dashboard/projects/new"
+              className="flex h-8 items-center gap-1.5 rounded-lg bg-brass px-3 text-[12.5px] font-medium text-carbon transition-colors hover:bg-brass-deep"
+            >
+              + New project
+            </Link>
+          </div>
         </div>
 
         {projects.length === 0 ? (
@@ -215,13 +219,7 @@ function EmptyProjects() {
           <Sparkles className="size-3.5" />
           Start a new app
         </Link>
-        <Link
-          href="/dashboard/projects/new?mode=repository"
-          className="flex h-9 items-center gap-2 rounded-lg border border-carbon-line bg-carbon px-4 text-[13px] text-dusk-muted transition-colors hover:border-carbon-line-strong hover:text-dusk"
-        >
-          <Github className="size-3.5" />
-          Use a repository
-        </Link>
+        <GitHubImportButton />
       </div>
     </div>
   );

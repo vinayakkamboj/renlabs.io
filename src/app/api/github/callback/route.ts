@@ -44,7 +44,10 @@ interface GitHubUserResponse {
 }
 
 export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url);
+  const { searchParams, origin: requestOrigin } = new URL(request.url);
+  // Use the stable canonical origin so the redirect_uri we send to GitHub's
+  // token endpoint matches what was sent during /api/github/connect.
+  const origin = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? requestOrigin;
 
   const errorRedirect = (reason: string) =>
     NextResponse.redirect(

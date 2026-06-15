@@ -44,6 +44,7 @@ interface PushRequest {
   privateRepo?: boolean;
   reuseExisting?: boolean;
   files?: PushFile[];
+  token?: string; // PAT fallback for local dev / when OAuth isn't available
 }
 
 interface GitHubUser {
@@ -242,20 +243,22 @@ async function ensureBranch(
 // ── handler ────────────────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
-  const session = readGitHubSession(await cookies());
-  if (!session) {
-    return NextResponse.json(
-      { error: "GitHub not connected. Connect your account first.", reauthRequired: true },
-      { status: 401 },
-    );
-  }
-  const token = session.accessToken;
-
   let body: PushRequest;
   try {
     body = (await req.json()) as PushRequest;
   } catch {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+  }
+
+  // Prefer the encrypted session cookie; fall back to a PAT sent in the body
+  // (useful for local dev or when the OAuth session has expired).
+  const session = readGitHubSession(await cookies());
+  const token = session?.accessToken ?? body.token?.trim();
+  if (!token) {
+    return NextResponse.json(
+      { error: "GitHub not connected. Connect your account first.", reauthRequired: true },
+      { status: 401 },
+    );
   }
 
   const repo = slugifyRepoName(body.repo ?? "");

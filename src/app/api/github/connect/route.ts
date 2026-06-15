@@ -66,11 +66,16 @@ export async function GET(request: Request) {
   const scopes =
     process.env.GITHUB_OAUTH_SCOPES ?? "repo workflow read:user user:email";
 
+  // Use NEXT_PUBLIC_APP_URL if set so the redirect_uri is always the canonical
+  // production URL, not the request origin (which can be a Vercel preview URL
+  // or localhost, causing GitHub to reject the callback).
+  const appOrigin = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? origin;
+
   const githubUrl = new URL("https://github.com/login/oauth/authorize");
   githubUrl.searchParams.set("client_id", process.env.GITHUB_CLIENT_ID!);
   githubUrl.searchParams.set(
     "redirect_uri",
-    `${origin}/api/github/callback`,
+    `${appOrigin}/api/github/callback`,
   );
   githubUrl.searchParams.set("scope", scopes);
   githubUrl.searchParams.set("state", encodedState);
