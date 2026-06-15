@@ -71,6 +71,58 @@ export async function importFromGitHub(input: ImportFromGitHubInput): Promise<vo
   redirect(`/workspace/${project.id}`);
 }
 
+/**
+ * Link a project to a GitHub repository (used after a "new" project's first
+ * push creates a fresh repo). Upserts the repositories row and sets the
+ * project's repository_id so future pushes update the same repo.
+ *
+ * Note: we intentionally do NOT change the project's `kind`. A "new" project
+ * keeps its kind so the workspace never tries to re-pull files from the repo and
+ * overwrite the generated code — it just gains a push target.
+ */
+export async function linkProjectToRepo(
+  projectId: string,
+  input: { fullName: string; defaultBranch: string; isPrivate: boolean },
+): Promise<{ ok: boolean }> {
+  if (!isSupabaseConfigured()) return { ok: false };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false };
+
+  try {
+    const { data: repo } = await supabase
+      .from("repositories")
+      .upsert(
+        {
+          user_id: user.id,
+          full_name: input.fullName,
+          default_branch: input.defaultBranch,
+          is_private: input.isPrivate,
+          index_state: "queued",
+        },
+        { onConflict: "user_id,full_name" },
+      )
+      .select("id")
+      .single();
+
+    if (!repo) return { ok: false };
+
+    await supabase
+      .from("projects")
+      .update({ repository_id: repo.id })
+      .eq("id", projectId)
+      .eq("user_id", user.id);
+
+    revalidatePath(`/workspace/${projectId}`);
+    return { ok: true };
+  } catch {
+    return { ok: false };
+  }
+}
+
 export interface CreateProjectInput {
   name: string;
   kind: ProjectKind;

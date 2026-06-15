@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { PageHeader } from "@/components/platform/widgets";
 import { NewProjectFlow } from "@/components/platform/new-project-flow";
-import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
+import { isSupabaseConfigured, createClient } from "@/lib/supabase/server";
 import { readGitHubSession } from "@/lib/github/session";
 
 export const metadata: Metadata = { title: "New project" };
@@ -20,7 +20,6 @@ export default async function NewProjectPage({
   const initialMode = mode === "repository" ? "repository" : "new";
 
   let githubConnected = false;
-  let repositories: { id: string; fullName: string }[] = [];
 
   if (isSupabaseConfigured()) {
     const supabase = await createClient();
@@ -31,31 +30,16 @@ export default async function NewProjectPage({
 
     const cookieStore = await cookies();
     githubConnected = readGitHubSession(cookieStore) !== null;
-
-    try {
-      const { data } = await supabase
-        .from("repositories")
-        .select("id, full_name")
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
-      repositories = (data ?? []).map((r) => ({
-        id: r.id,
-        fullName: r.full_name,
-      }));
-    } catch {
-      repositories = [];
-    }
   }
 
   return (
     <>
       <PageHeader
         title="New project"
-        description="Choose how you want to start. Describe a new application, or build on a repository you've connected."
+        description="Choose how you want to start — a blank app from a prompt, or pull in one of your GitHub repositories."
       />
       <NewProjectFlow
         githubConnected={githubConnected}
-        repositories={repositories}
         initialMode={initialMode}
       />
     </>

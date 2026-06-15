@@ -30,6 +30,7 @@ export default async function WorkspacePage({ params }: PageProps) {
         projectId={id}
         projectName="Untitled project"
         repoFullName={null}
+        repoDefaultBranch={null}
         initialFiles={createBaseTemplate()}
         hadFirstBuild={false}
       />
@@ -101,6 +102,7 @@ export default async function WorkspacePage({ params }: PageProps) {
       projectId={id}
       projectName={project.name}
       repoFullName={repo?.full_name ?? null}
+      repoDefaultBranch={repo?.default_branch ?? null}
       initialFiles={initialFiles}
       hadFirstBuild={hadFirstBuild}
     />

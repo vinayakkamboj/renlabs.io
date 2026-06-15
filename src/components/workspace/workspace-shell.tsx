@@ -38,6 +38,7 @@ interface WorkspaceShellProps {
   projectId: string;
   projectName: string;
   repoFullName: string | null;
+  repoDefaultBranch: string | null;
   initialFiles: ProjectFile[];
   hadFirstBuild: boolean;
 }
@@ -46,6 +47,7 @@ export function WorkspaceShell({
   projectId,
   projectName,
   repoFullName,
+  repoDefaultBranch,
   initialFiles,
   hadFirstBuild,
 }: WorkspaceShellProps) {
@@ -215,9 +217,11 @@ export function WorkspaceShell({
 
       {pushOpen && (
         <GitHubPushModal
+          projectId={projectId}
           projectName={projectName}
           files={projectFiles}
           repoFullName={repoFullName}
+          repoDefaultBranch={repoDefaultBranch}
           onClose={() => setPushOpen(false)}
         />
       )}
