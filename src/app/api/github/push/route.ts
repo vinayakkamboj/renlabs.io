@@ -29,7 +29,8 @@ export const runtime = "nodejs";
 
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { readGitHubSession } from "@/lib/github/session";
+import { getValidSession, setSessionCookie } from "@/lib/github/session";
+import type { GitHubSession } from "@/lib/github/session";
 
 interface PushFile {
   path: string;
@@ -250,12 +251,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
-  // Prefer the encrypted session cookie; fall back to a PAT sent in the body
-  // (useful for local dev or when the OAuth session has expired).
-  const session = readGitHubSession(await cookies());
+  // Prefer the encrypted session cookie (refreshing the user-to-server token if
+  // it expired); fall back to a PAT sent in the body (local dev / no OAuth).
+  const { session, refreshed } = await getValidSession(await cookies());
+
+  // When the token was refreshed, GitHub rotated the refresh token — persist the
+  // new session on every response so the next request can refresh again.
+  const json = (data: unknown, init?: ResponseInit) => {
+    const res = NextResponse.json(data, init);
+    if (refreshed) setSessionCookie(res, refreshed as GitHubSession);
+    return res;
+  };
+
   const token = session?.accessToken ?? body.token?.trim();
   if (!token) {
-    return NextResponse.json(
+    return json(
       { error: "GitHub not connected. Connect your account first.", reauthRequired: true },
       { status: 401 },
     );
@@ -266,10 +276,10 @@ export async function POST(req: Request) {
   const message = body.message?.trim() || "Initial commit from Ren Code";
 
   if (!repo) {
-    return NextResponse.json({ error: "A repository name is required." }, { status: 400 });
+    return json({ error: "A repository name is required." }, { status: 400 });
   }
   if (!Array.isArray(body.files) || body.files.length === 0) {
-    return NextResponse.json({ error: "No project files to push." }, { status: 400 });
+    return json({ error: "No project files to push." }, { status: 400 });
   }
 
   const files = body.files
@@ -281,7 +291,7 @@ export async function POST(req: Request) {
     .filter((f): f is PushFile => Boolean(f));
 
   if (!files.length) {
-    return NextResponse.json({ error: "No valid files to push." }, { status: 400 });
+    return json({ error: "No valid files to push." }, { status: 400 });
   }
 
   // Always add a sensible .gitignore so node_modules / secrets aren't committed.
@@ -299,12 +309,12 @@ export async function POST(req: Request) {
     const userProbe = await ghMaybe<GitHubUser>(token, "/user");
     if (!userProbe.ok) {
       if (userProbe.status === 401 || userProbe.status === 403) {
-        return NextResponse.json(
+        return json(
           { error: "GitHub session expired. Reconnect to push.", reauthRequired: true },
           { status: 401 },
         );
       }
-      return NextResponse.json(
+      return json(
         { error: "Could not verify GitHub session." },
         { status: 502 },
       );
@@ -374,7 +384,7 @@ export async function POST(req: Request) {
       },
     );
 
-    return NextResponse.json({
+    return json({
       ok: true,
       repoFullName: repoInfo.full_name,
       repoUrl: repoInfo.html_url,
@@ -385,6 +395,6 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     const detail = error instanceof Error ? error.message : "GitHub push failed.";
-    return NextResponse.json({ error: detail }, { status: 500 });
+    return json({ error: detail }, { status: 500 });
   }
 }

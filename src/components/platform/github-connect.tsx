@@ -23,6 +23,8 @@ const ERROR_LABELS: Record<string, string> = {
   token_exchange_error: "Could not reach GitHub to exchange the token.",
   github_user_fetch_failed: "Could not read your GitHub profile.",
   github_user_fetch_error: "Could not reach GitHub to read your profile.",
+  enable_oauth_during_install:
+    "Almost there — in your GitHub App settings, enable 'Request user authorization (OAuth) during installation', then reconnect.",
 };
 
 export function GithubConnect({

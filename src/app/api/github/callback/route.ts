@@ -31,6 +31,10 @@ interface GitHubTokenResponse {
   access_token?: string;
   token_type?: string;
   scope?: string;
+  // GitHub Apps with user-token expiration enabled return these:
+  refresh_token?: string;
+  expires_in?: number;
+  refresh_token_expires_in?: number;
   error?: string;
   error_description?: string;
 }
@@ -61,22 +65,31 @@ export async function GET(request: Request) {
     return errorRedirect("missing_state");
   }
 
-  // ── 2. Verify CSRF state from query param ─────────────────────────────────
+  // ── 2. Verify CSRF state ──────────────────────────────────────────────────
+  // The OAuth authorize flow always round-trips `state`. The GitHub App
+  // installation flow may omit it, so if it's missing we fall back to trusting
+  // the httpOnly state cookie (which an attacker can't forge), provided this is
+  // a genuine install callback (installation_id present).
   const rawState = searchParams.get("state");
-  if (!rawState) {
+  const installationIdParam = searchParams.get("installation_id");
+  if (rawState) {
+    let callbackState;
+    try {
+      callbackState = decodeOAuthState(rawState);
+    } catch {
+      return errorRedirect("invalid_state");
+    }
+    if (!statesMatch(cookieState, callbackState)) {
+      return errorRedirect("state_mismatch");
+    }
+  } else if (!installationIdParam) {
     return errorRedirect("missing_state_param");
   }
+  // else: install flow without state echo — cookie presence is sufficient.
 
-  let callbackState;
-  try {
-    callbackState = decodeOAuthState(rawState);
-  } catch {
-    return errorRedirect("invalid_state");
-  }
-
-  if (!statesMatch(cookieState, callbackState)) {
-    return errorRedirect("state_mismatch");
-  }
+  const installationId = installationIdParam
+    ? Number.parseInt(installationIdParam, 10)
+    : undefined;
 
   // ── 3. Check for OAuth error from GitHub ──────────────────────────────────
   const oauthError = searchParams.get("error");
@@ -89,7 +102,11 @@ export async function GET(request: Request) {
 
   const code = searchParams.get("code");
   if (!code) {
-    return errorRedirect("missing_code");
+    // Install happened but no OAuth code was returned — the app's "Request user
+    // authorization (OAuth) during installation" option is likely off.
+    return errorRedirect(
+      installationId ? "enable_oauth_during_install" : "missing_code",
+    );
   }
 
   // ── 4. Exchange code for access token ─────────────────────────────────────
@@ -129,6 +146,9 @@ export async function GET(request: Request) {
 
   const accessToken = tokenData.access_token;
   const scope = tokenData.scope ?? "";
+  const expiresAt = tokenData.expires_in
+    ? new Date(Date.now() + tokenData.expires_in * 1000).toISOString()
+    : undefined;
 
   // ── 5. Fetch GitHub user profile ──────────────────────────────────────────
   let githubUser: GitHubUserResponse;
@@ -156,6 +176,9 @@ export async function GET(request: Request) {
     login: githubUser.login,
     scope,
     connectedAt: new Date().toISOString(),
+    installationId,
+    refreshToken: tokenData.refresh_token,
+    expiresAt,
   };
 
   const returnTo = normalizeReturnTo(cookieState.returnTo);

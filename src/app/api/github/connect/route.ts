@@ -17,6 +17,7 @@ import { NextResponse } from "next/server";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import {
   isGitHubConfigured,
+  getGitHubAppSlug,
   createOAuthState,
   setStateCookie,
   encodeOAuthState,
@@ -57,32 +58,42 @@ export async function GET(request: Request) {
   const state = createOAuthState(returnTo);
   const encodedState = encodeOAuthState(state);
 
-  // ── 5. Build GitHub authorization URL ────────────────────────────────────
-  // `repo`     — full read/write on the connecting user's repos (create, push, manage)
-  // `workflow` — allow pushing files under .github/workflows (rejected otherwise)
-  // `read:user`/`user:email` — profile + email for the connection record
-  // Each user grants this for THEIR OWN account when they click Connect — GitHub
-  // has no mechanism to grant blanket access to other people's accounts.
-  const scopes =
-    process.env.GITHUB_OAUTH_SCOPES ?? "repo workflow read:user user:email";
-
   // Use NEXT_PUBLIC_APP_URL if set so the redirect_uri is always the canonical
   // production URL, not the request origin (which can be a Vercel preview URL
   // or localhost, causing GitHub to reject the callback).
   const appOrigin = process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? origin;
 
-  const githubUrl = new URL("https://github.com/login/oauth/authorize");
-  githubUrl.searchParams.set("client_id", process.env.GITHUB_CLIENT_ID!);
-  githubUrl.searchParams.set(
-    "redirect_uri",
-    `${appOrigin}/api/github/callback`,
-  );
-  githubUrl.searchParams.set("scope", scopes);
-  githubUrl.searchParams.set("state", encodedState);
-  githubUrl.searchParams.set("allow_signup", "false");
+  // ── 5. Build the authorization URL ────────────────────────────────────────
+  const appSlug = getGitHubAppSlug();
+  let redirectTarget: string;
+
+  if (appSlug) {
+    // GitHub App mode: send the user to INSTALL the app (and authorize during
+    // install). This is required so the app gains access to the user's repos —
+    // a plain authorization isn't enough for a GitHub App. With "Request user
+    // authorization (OAuth) during installation" enabled, GitHub redirects back
+    // to our callback with both `installation_id` and an OAuth `code`.
+    const installUrl = new URL(
+      `https://github.com/apps/${appSlug}/installations/new`,
+    );
+    installUrl.searchParams.set("state", encodedState);
+    redirectTarget = installUrl.toString();
+  } else {
+    // OAuth App mode: classic authorize flow with explicit scopes.
+    // `repo` (full repo control), `workflow` (push .github/workflows), profile.
+    const scopes =
+      process.env.GITHUB_OAUTH_SCOPES ?? "repo workflow read:user user:email";
+    const githubUrl = new URL("https://github.com/login/oauth/authorize");
+    githubUrl.searchParams.set("client_id", process.env.GITHUB_CLIENT_ID!);
+    githubUrl.searchParams.set("redirect_uri", `${appOrigin}/api/github/callback`);
+    githubUrl.searchParams.set("scope", scopes);
+    githubUrl.searchParams.set("state", encodedState);
+    githubUrl.searchParams.set("allow_signup", "false");
+    redirectTarget = githubUrl.toString();
+  }
 
   // ── 6. Store state cookie and redirect ────────────────────────────────────
-  const response = NextResponse.redirect(githubUrl.toString());
+  const response = NextResponse.redirect(redirectTarget);
   setStateCookie(response, state);
 
   return response;

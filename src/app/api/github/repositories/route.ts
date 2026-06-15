@@ -24,7 +24,7 @@ export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { readGitHubSession } from "@/lib/github/session";
+import { getValidSession, setSessionCookie } from "@/lib/github/session";
 
 interface GitHubRepo {
   id: number;
@@ -40,13 +40,17 @@ interface GitHubRepo {
 
 export async function GET() {
   const cookieStore = await cookies();
-  const session = readGitHubSession(cookieStore);
+  const { session, refreshed } = await getValidSession(cookieStore);
+
+  // Persist a rotated token onto every response when a refresh occurred.
+  const json = (data: unknown, init?: ResponseInit) => {
+    const res = NextResponse.json(data, init);
+    if (refreshed) setSessionCookie(res, refreshed);
+    return res;
+  };
 
   if (!session) {
-    return NextResponse.json(
-      { error: "GitHub not connected" },
-      { status: 401 },
-    );
+    return json({ error: "GitHub not connected" }, { status: 401 });
   }
 
   try {
@@ -65,12 +69,12 @@ export async function GET() {
 
     if (!res.ok) {
       if (res.status === 401) {
-        return NextResponse.json(
+        return json(
           { error: "GitHub token expired or revoked" },
           { status: 401 },
         );
       }
-      return NextResponse.json(
+      return json(
         { error: "GitHub API error", status: res.status },
         { status: 502 },
       );
@@ -90,9 +94,9 @@ export async function GET() {
       url: r.html_url,
     }));
 
-    return NextResponse.json({ repositories: mapped });
+    return json({ repositories: mapped });
   } catch {
-    return NextResponse.json(
+    return json(
       { error: "Failed to fetch repositories" },
       { status: 500 },
     );

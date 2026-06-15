@@ -37,8 +37,14 @@ const TAG_LENGTH = 16;
 export interface GitHubSession {
   accessToken: string;
   login: string;
-  scope: string;
+  scope: string; // empty string for GitHub Apps (access governed by app permissions)
   connectedAt: string; // ISO 8601
+  /** GitHub App installation id, if connected via a GitHub App. */
+  installationId?: number;
+  /** Refresh token (GitHub Apps with token expiration enabled). */
+  refreshToken?: string;
+  /** ISO timestamp when accessToken expires (GitHub Apps with expiration). */
+  expiresAt?: string;
 }
 
 export interface GitHubOAuthState {
@@ -53,6 +59,103 @@ export function isGitHubConfigured(): boolean {
   return Boolean(
     process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET,
   );
+}
+
+/**
+ * GitHub App mode is active when an app slug is configured. In this mode the
+ * connect flow sends users to install the app (and authorize), rather than the
+ * plain OAuth authorize page. Both modes use the same token endpoints.
+ */
+export function getGitHubAppSlug(): string | null {
+  return process.env.GITHUB_APP_SLUG?.trim() || null;
+}
+
+export function isGitHubAppMode(): boolean {
+  return Boolean(getGitHubAppSlug());
+}
+
+// ─── User-to-server token refresh (GitHub Apps) ───────────────────────────────
+
+interface TokenRefreshResult {
+  accessToken: string;
+  refreshToken?: string;
+  expiresAt?: string;
+}
+
+/**
+ * Exchange a refresh token for a fresh user-to-server access token. Only
+ * relevant for GitHub Apps that have user-token expiration enabled. Returns
+ * null on any failure so callers can fall back to prompting re-auth.
+ */
+export async function refreshUserAccessToken(
+  refreshToken: string,
+): Promise<TokenRefreshResult | null> {
+  try {
+    const res = await fetch("https://github.com/login/oauth/access_token", {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        client_id: process.env.GITHUB_CLIENT_ID,
+        client_secret: process.env.GITHUB_CLIENT_SECRET,
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+      }),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      access_token?: string;
+      refresh_token?: string;
+      expires_in?: number;
+      error?: string;
+    };
+    if (data.error || !data.access_token) return null;
+    return {
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token,
+      expiresAt: data.expires_in
+        ? new Date(Date.now() + data.expires_in * 1000).toISOString()
+        : undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Returns a valid session, transparently refreshing the access token if it has
+ * expired and a refresh token is available.
+ *
+ * Returns `{ session, refreshed }`. When `refreshed` is set, the caller MUST
+ * persist it to the response cookie (via `setSessionCookie`) — GitHub rotates
+ * the refresh token on every use, so the new one replaces the old.
+ */
+export async function getValidSession(
+  cookieStore: CookieReader,
+): Promise<{ session: GitHubSession | null; refreshed?: GitHubSession }> {
+  const session = readGitHubSession(cookieStore);
+  if (!session) return { session: null };
+
+  // Token still valid (or non-expiring, i.e. no expiresAt): use as-is.
+  const expired =
+    session.expiresAt &&
+    new Date(session.expiresAt).getTime() < Date.now() + 30_000;
+  if (!expired) return { session };
+
+  if (!session.refreshToken) return { session }; // can't refresh; caller may 401
+
+  const result = await refreshUserAccessToken(session.refreshToken);
+  if (!result) return { session };
+
+  const refreshed: GitHubSession = {
+    ...session,
+    accessToken: result.accessToken,
+    refreshToken: result.refreshToken ?? session.refreshToken,
+    expiresAt: result.expiresAt,
+  };
+  return { session: refreshed, refreshed };
 }
 
 // ─── Key derivation ──────────────────────────────────────────────────────────
