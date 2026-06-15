@@ -183,10 +183,34 @@ function StatusTab({
   );
 }
 
+/**
+ * The classic in-browser bundler injects its own entry bundle into the page,
+ * so any `<script type="module">` the template ships (which points at the Vite
+ * entry) must be removed to avoid mounting the app twice. Everything else in the
+ * HTML — crucially the Tailwind Play CDN tag and its inline config — is kept.
+ */
+function toPreviewHtml(raw: string | undefined): string {
+  const html = raw ?? FALLBACK_PREVIEW_HTML;
+  return html.replace(/<script\b[^>]*\btype=["']module["'][^>]*>\s*<\/script>\s*/gi, "");
+}
+
+const FALLBACK_PREVIEW_HTML = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>`;
+
 export function LivePreview({ projectFiles, viewerKey }: PreviewProps) {
   const { files, dependencies, packageDeps } = useMemo(() => {
     const fileMap: Record<string, string> = {};
     let pkgDeps: Record<string, string> = { ...STANDARD_DEPENDENCIES };
+    let html: string | undefined;
 
     for (const f of projectFiles) {
       if (f.path === "package.json") {
@@ -200,8 +224,15 @@ export function LivePreview({ projectFiles, viewerKey }: PreviewProps) {
         }
         continue;
       }
+      if (f.path === "index.html") {
+        html = f.content;
+        continue;
+      }
       fileMap["/" + f.path] = f.content;
     }
+
+    // The classic bundler reads its HTML shell from /public/index.html.
+    fileMap["/public/index.html"] = toPreviewHtml(html);
 
     return { files: fileMap, dependencies: pkgDeps, packageDeps: pkgDeps };
   }, [projectFiles]);
@@ -218,13 +249,14 @@ export function LivePreview({ projectFiles, viewerKey }: PreviewProps) {
   return (
     <SandpackProvider
       key={viewerKey}
-      template="vite-react-ts"
+      // Classic in-browser bundler — no Node VM boot, dependencies resolved from
+      // a CDN. Boots in ~1–3s versus the 5–15s Nodebox-based vite template.
+      template="react-ts"
       files={files}
       customSetup={{ dependencies, entry: "/src/main.tsx" }}
       options={{
         recompileMode: "delayed",
-        recompileDelay: 250,
-        externalResources: ["https://cdn.tailwindcss.com"],
+        recompileDelay: 300,
         bundlerTimeOut: 90000,
       }}
       style={{ height: "100%", display: "flex", flexDirection: "column" }}

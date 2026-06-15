@@ -28,7 +28,6 @@ interface Project {
 
 export default async function DashboardPage() {
   let projectCount = 0;
-  let repositoryCount = 0;
   let creditBalance: number | null = null;
   let projects: Project[] = [];
   let sharedProjects: Project[] = [];
@@ -40,13 +39,9 @@ export default async function DashboardPage() {
 
     await ensureCreditsAccount(user.id);
 
-    const [pResult, rResult, creditsResult, listResult] = await Promise.all([
+    const [pResult, creditsResult, listResult] = await Promise.all([
       supabase
         .from("projects")
-        .select("id", { count: "exact", head: true })
-        .eq("user_id", user.id),
-      supabase
-        .from("repositories")
         .select("id", { count: "exact", head: true })
         .eq("user_id", user.id),
       getCreditsBalance(user.id),
@@ -58,7 +53,6 @@ export default async function DashboardPage() {
     ]);
 
     projectCount = pResult.count ?? 0;
-    repositoryCount = rResult.count ?? 0;
     creditBalance = creditsResult;
     projects = listResult.data ?? [];
 
@@ -111,7 +105,6 @@ export default async function DashboardPage() {
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-3 text-[12px] text-dusk-faint">
             <span>{projectCount} project{projectCount !== 1 ? "s" : ""}</span>
-            <span>{repositoryCount} repo{repositoryCount !== 1 ? "s" : ""}</span>
           </div>
           <Link
             href="/dashboard/billing"
