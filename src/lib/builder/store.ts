@@ -26,6 +26,7 @@ type BuildPhase = "idle" | "thinking" | "writing" | "applying" | "error";
 
 interface WorkspaceState {
   projectId: string;
+  projectKind: "new" | "repository";
   projectFiles: ProjectFile[];
   messages: BuildMessage[];
   activeFile: string | null;
@@ -43,6 +44,7 @@ interface WorkspaceState {
     files: ProjectFile[],
     messages: BuildMessage[],
     isFirstBuild: boolean,
+    projectKind?: "new" | "repository",
   ) => void;
   setActiveFile: (path: string) => void;
   setModelTier: (tier: ModelTierId) => void;
@@ -93,6 +95,7 @@ function newId(): string {
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   projectId: "",
+  projectKind: "new",
   projectFiles: [],
   messages: [],
   activeFile: null,
@@ -105,10 +108,11 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   recentlyChanged: [],
   error: null,
 
-  initialize: (projectId, files, messages, isFirstBuild) => {
+  initialize: (projectId, files, messages, isFirstBuild, projectKind = "new") => {
     const seeded = files.length ? files : createBaseTemplate();
     set({
       projectId,
+      projectKind,
       projectFiles: seeded,
       messages,
       isFirstBuild,
@@ -154,7 +158,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }));
 
     const runBuild = async (repairIssues?: string): Promise<string> => {
-      const { messages, projectFiles, modelTier, isFirstBuild, recentlyChanged } =
+      const { messages, projectFiles, modelTier, isFirstBuild, recentlyChanged, projectKind } =
         get();
       const res = await fetch("/api/builder", {
         method: "POST",
@@ -166,6 +170,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           isFirstBuild,
           recentlyChanged,
           repairIssues,
+          isRepository: projectKind === "repository",
         }),
       });
 

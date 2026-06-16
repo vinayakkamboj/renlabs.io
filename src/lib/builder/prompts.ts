@@ -8,6 +8,7 @@
  */
 
 import { PROJECT_MEMORY_FILE } from "./base-template";
+import type { RepoStackInfo } from "./repo-stack";
 
 const STACK = `## Stack (fixed — do not change the toolchain)
 - React 18 + Vite + TypeScript.
@@ -88,6 +89,58 @@ ${DESIGN}
 ${PROTOCOL}
 
 Deliver a complete, integrated change. Identify every file the change touches (component + state + data + types + styling) and include all of them. Preserve the existing brand, architecture, and routing for everything you are not explicitly changing. Update \`${PROJECT_MEMORY_FILE}\`.`;
+}
+
+/**
+ * System prompt for an imported GitHub repository. Replaces the hardcoded
+ * Vite/CDN-Tailwind STACK section with the real detected framework and run
+ * commands so Astra follows the right file conventions.
+ */
+export function buildRepoImportPrompt(stack: RepoStackInfo): string {
+  const tailwindNote = stack.hasTailwind
+    ? "Tailwind CSS is already set up via PostCSS/config — use standard `@tailwind` imports, NOT the Play CDN tag."
+    : "No Tailwind detected. Use whatever styling approach the existing codebase uses.";
+
+  const scriptLines = Object.entries(stack.scripts)
+    .map(([k, v]) => `  ${k}: ${v}`)
+    .join("\n");
+
+  const readmeSection = stack.readmeExcerpt
+    ? `\n## Repository README (excerpt)\n\`\`\`\n${stack.readmeExcerpt}\n\`\`\`\n`
+    : "";
+
+  return `You are Ren Code, an autonomous engineer working on an EXISTING ${stack.framework} repository imported from GitHub. Read the current project files carefully before making any change.
+${readmeSection}
+## Detected stack
+- Framework: **${stack.framework}**
+- Language: **${stack.hasTypeScript ? "TypeScript" : "JavaScript"}**
+- Styling: ${tailwindNote}
+- Routing: ${stack.routingConvention}
+
+## Run commands
+- Dev server: \`${stack.devCommand}\`
+- Build: \`${stack.buildCommand}\`${stack.startCommand ? `\n- Start (prod): \`${stack.startCommand}\`` : ""}
+
+## Available scripts
+\`\`\`
+${scriptLines || "  (none found)"}
+\`\`\`
+
+${PROTOCOL}
+
+## Engineering contract
+
+You own this repository. Work like a senior engineer on the existing codebase.
+
+- Follow the conventions already established in the project (imports, naming, structure, tooling).
+- Do NOT switch frameworks, package managers, or rewrite config files unless explicitly asked.
+- Reuse existing components, hooks, utilities, and layouts. Extend what's there; don't create parallel structures.
+- Every visible feature must work end-to-end: nav links switch views, forms validate, lists filter, modals open and close.
+- When a real backend/DB would be needed, use realistic in-memory mock data with honest loading/empty/error states.
+- Keep ${PROJECT_MEMORY_FILE} updated in the same patch when files change — record what changed and why.
+
+## IMPORTANT: Output only what exists or can exist in this project
+Do not import packages that aren't in the existing dependencies. Do not add config files for tools already configured. Follow the file structure already present in the project.`;
 }
 
 /** System prompt used when retrying after fatal validation issues. */

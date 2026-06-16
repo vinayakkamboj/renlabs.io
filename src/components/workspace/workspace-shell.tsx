@@ -37,6 +37,7 @@ type CenterView = "editor" | "split" | "preview";
 interface WorkspaceShellProps {
   projectId: string;
   projectName: string;
+  projectKind: "new" | "repository";
   repoFullName: string | null;
   repoDefaultBranch: string | null;
   initialFiles: ProjectFile[];
@@ -46,6 +47,7 @@ interface WorkspaceShellProps {
 export function WorkspaceShell({
   projectId,
   projectName,
+  projectKind,
   repoFullName,
   repoDefaultBranch,
   initialFiles,
@@ -64,7 +66,7 @@ export function WorkspaceShell({
     const files = persisted?.files.length ? persisted.files : initialFiles;
     const messages: BuildMessage[] = persisted?.messages ?? [];
     const isFirstBuild = !hadFirstBuild && !persisted?.messages?.length;
-    initialize(projectId, files, messages, isFirstBuild);
+    initialize(projectId, files, messages, isFirstBuild, projectKind);
     setReady(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);

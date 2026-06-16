@@ -29,6 +29,7 @@ export default async function WorkspacePage({ params }: PageProps) {
       <WorkspaceShell
         projectId={id}
         projectName="Untitled project"
+        projectKind="new"
         repoFullName={null}
         repoDefaultBranch={null}
         initialFiles={createBaseTemplate()}
@@ -101,6 +102,7 @@ export default async function WorkspacePage({ params }: PageProps) {
     <WorkspaceShell
       projectId={id}
       projectName={project.name}
+      projectKind={(project.kind as "new" | "repository") ?? "new"}
       repoFullName={repo?.full_name ?? null}
       repoDefaultBranch={repo?.default_branch ?? null}
       initialFiles={initialFiles}

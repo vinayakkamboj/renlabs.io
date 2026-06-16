@@ -24,7 +24,9 @@ import {
   buildNewProjectPrompt,
   buildEditPrompt,
   buildRepairPrompt,
+  buildRepoImportPrompt,
 } from "@/lib/builder/prompts";
+import { detectRepoStack } from "@/lib/builder/repo-stack";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import { deductBuildCredits } from "@/lib/credits/server";
 import { CREDITS_PER_BUILD } from "@/lib/credits/config";
@@ -37,6 +39,7 @@ interface BuildRequest {
   modelTier?: string;
   projectId?: string;
   isFirstBuild?: boolean;
+  isRepository?: boolean;
   recentlyChanged?: string[];
   errorPaths?: string[];
   repairIssues?: string;
@@ -109,11 +112,14 @@ export async function POST(req: NextRequest) {
     errorPaths: body.errorPaths,
   });
 
+  const isRepo = body.isRepository === true;
   const system = body.repairIssues
     ? buildRepairPrompt(body.repairIssues)
-    : body.isFirstBuild
-      ? buildNewProjectPrompt()
-      : buildEditPrompt();
+    : isRepo
+      ? buildRepoImportPrompt(detectRepoStack(files))
+      : body.isFirstBuild
+        ? buildNewProjectPrompt()
+        : buildEditPrompt();
 
   const apiMessages = body.messages.map((m, idx) => {
     if (idx === body.messages.length - 1 && m.role === "user") {
