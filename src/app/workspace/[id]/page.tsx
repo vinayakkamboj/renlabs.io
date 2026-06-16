@@ -44,15 +44,26 @@ export default async function WorkspacePage({ params }: PageProps) {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { data: project } = await supabase
-    .from("projects")
-    .select(
-      "id, name, kind, repository_id, repositories ( full_name, default_branch )",
-    )
-    .eq("id", id)
-    .eq("user_id", user.id)
-    .single();
+  // Fetch the project and any saved files in parallel — both only need the
+  // project id and user id, so there's no reason to wait for one before the
+  // other. This removes a full network round-trip from the page load.
+  const [projectResult, savedResult] = await Promise.all([
+    supabase
+      .from("projects")
+      .select(
+        "id, name, kind, repository_id, repositories ( full_name, default_branch )",
+      )
+      .eq("id", id)
+      .eq("user_id", user.id)
+      .single(),
+    supabase
+      .from("project_files")
+      .select("path, content")
+      .eq("project_id", id)
+      .eq("user_id", user.id),
+  ]);
 
+  const project = projectResult.data;
   if (!project) redirect("/dashboard/projects");
 
   const repoRaw = project.repositories as unknown;
@@ -64,18 +75,9 @@ export default async function WorkspacePage({ params }: PageProps) {
   let initialFiles: ProjectFile[] = [];
   let hadFirstBuild = false;
 
-  try {
-    const { data: saved } = await supabase
-      .from("project_files")
-      .select("path, content")
-      .eq("project_id", id)
-      .eq("user_id", user.id);
-    if (saved && saved.length) {
-      initialFiles = saved as ProjectFile[];
-      hadFirstBuild = true;
-    }
-  } catch {
-    /* table may not exist — fall through */
+  if (savedResult.data && savedResult.data.length) {
+    initialFiles = savedResult.data as ProjectFile[];
+    hadFirstBuild = true;
   }
 
   if (!initialFiles.length && project.kind === "repository" && repo) {
