@@ -4,13 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import {
   ArrowUp,
   ChevronDown,
-  Cpu,
   FileCode2,
   Layers,
   Loader2,
   Sparkles,
   Wand2,
-  Zap,
 } from "lucide-react";
 import { useWorkspaceStore } from "@/lib/builder/store";
 import { MODEL_TIERS, type ModelTierId } from "@/lib/builder/model-tiers";
@@ -23,20 +21,12 @@ const PHASE_LABEL: Record<string, string> = {
   applying: "Applying changes",
 };
 
-const TIER_ICON: Record<ModelTierId, React.ComponentType<{ className?: string }>> = {
-  spark: Zap,
-  flow: Sparkles,
-  forge: Cpu,
-  apex: Wand2,
-};
-
 export function ChatPanel() {
   const messages = useWorkspaceStore((s) => s.messages);
   const isBuilding = useWorkspaceStore((s) => s.isBuilding);
   const phase = useWorkspaceStore((s) => s.phase);
   const streamingText = useWorkspaceStore((s) => s.streamingText);
   const sendMessage = useWorkspaceStore((s) => s.sendMessage);
-  const modelTier = useWorkspaceStore((s) => s.modelTier);
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -53,15 +43,10 @@ export function ChatPanel() {
     setInput("");
   }
 
-  const TierIcon = TIER_ICON[modelTier] ?? Sparkles;
-
   return (
     <div className="flex h-full flex-col bg-carbon">
       {/* Header */}
       <div className="flex h-10 shrink-0 items-center gap-2 border-b border-carbon-line px-4">
-        <div className="flex size-5 items-center justify-center rounded-md bg-brass/15">
-          <Sparkles className="size-3 text-brass" />
-        </div>
         <span className="text-[12px] font-semibold tracking-wide text-brass">
           Astra
         </span>
@@ -118,7 +103,6 @@ export function ChatPanel() {
           />
           <div className="flex items-center justify-between px-3 pb-2.5 pt-0.5">
             <div className="flex items-center gap-1.5 text-[10.5px] text-dusk-faint/70">
-              <TierIcon className="size-3" />
               <span>⏎ send · ⇧⏎ newline</span>
             </div>
             <button
@@ -151,10 +135,7 @@ function Message({ message }: { message: BuildMessage }) {
   }
 
   return (
-    <div className="flex gap-2.5">
-      <div className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md bg-brass/15">
-        <Sparkles className="size-3 text-brass" />
-      </div>
+    <div className="flex">
       <div className="min-w-0 flex-1">
         <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-dusk-muted">
           {message.content}
@@ -189,7 +170,6 @@ function ModelPicker() {
   const setModelTier = useWorkspaceStore((s) => s.setModelTier);
   const [open, setOpen] = useState(false);
   const active = MODEL_TIERS.find((t) => t.id === modelTier)!;
-  const ActiveIcon = TIER_ICON[modelTier] ?? Sparkles;
 
   return (
     <div className="relative">
@@ -198,7 +178,6 @@ function ModelPicker() {
         className="flex w-full items-center justify-between rounded-lg border border-carbon-line bg-carbon-raised px-3 py-2 text-left transition-colors hover:border-carbon-line-strong"
       >
         <span className="flex items-center gap-2 text-[12px]">
-          <ActiveIcon className="size-3.5 text-brass" />
           <span className="text-dusk">{active.brandName}</span>
           <span className="text-[11px] text-dusk-faint">· {active.usageLevel}</span>
         </span>
@@ -215,7 +194,6 @@ function ModelPicker() {
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
           <div className="absolute bottom-full left-0 z-20 mb-1.5 w-full overflow-hidden rounded-xl border border-carbon-line-strong bg-carbon-raised shadow-2xl">
             {MODEL_TIERS.map((tier) => {
-              const TierIcon = TIER_ICON[tier.id as ModelTierId] ?? Sparkles;
               const isActive = tier.id === modelTier;
               return (
                 <button
@@ -229,12 +207,6 @@ function ModelPicker() {
                     isActive && "bg-carbon-high",
                   )}
                 >
-                  <TierIcon
-                    className={cn(
-                      "mt-0.5 size-3.5 shrink-0",
-                      isActive ? "text-brass" : "text-dusk-faint",
-                    )}
-                  />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span
@@ -278,10 +250,8 @@ function EmptyState() {
   const sendMessage = useWorkspaceStore((s) => s.sendMessage);
   return (
     <div className="flex h-full flex-col items-center justify-center py-8 text-center">
-      <div className="flex size-12 items-center justify-center rounded-2xl bg-brass/10 ring-1 ring-brass/20">
-        <Sparkles className="size-5 text-brass" />
-      </div>
-      <p className="mt-4 text-[14px] font-semibold text-dusk">Start with Astra</p>
+      <p className="text-[15px] font-semibold tracking-wide text-brass">Astra</p>
+      <p className="mt-3 text-[14px] font-semibold text-dusk">Start with Astra</p>
       <p className="mt-1.5 max-w-[30ch] text-[12.5px] leading-relaxed text-dusk-faint">
         Describe what you want to build. Astra writes the code, wires the
         state, and renders it live.

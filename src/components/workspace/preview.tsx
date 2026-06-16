@@ -184,33 +184,97 @@ function StatusTab({
 }
 
 /**
- * The classic in-browser bundler injects its own entry bundle into the page,
- * so any `<script type="module">` the template ships (which points at the Vite
- * entry) must be removed to avoid mounting the app twice. Everything else in the
- * HTML — crucially the Tailwind Play CDN tag and its inline config — is kept.
+ * Tailwind theme for the preview. Mirrors the token mapping baked into the base
+ * template's index.html so generated apps can use the semantic color utilities
+ * (`bg-primary`, `text-foreground`, …) that resolve to the HSL CSS variables
+ * defined in src/index.css.
  */
-function toPreviewHtml(raw: string | undefined): string {
-  const html = raw ?? FALLBACK_PREVIEW_HTML;
-  return html.replace(/<script\b[^>]*\btype=["']module["'][^>]*>\s*<\/script>\s*/gi, "");
-}
+const PREVIEW_TAILWIND_CONFIG = {
+  darkMode: ["class"],
+  theme: {
+    extend: {
+      colors: {
+        background: "hsl(var(--background) / <alpha-value>)",
+        foreground: "hsl(var(--foreground) / <alpha-value>)",
+        card: {
+          DEFAULT: "hsl(var(--card) / <alpha-value>)",
+          foreground: "hsl(var(--card-foreground) / <alpha-value>)",
+        },
+        popover: {
+          DEFAULT: "hsl(var(--popover) / <alpha-value>)",
+          foreground: "hsl(var(--popover-foreground) / <alpha-value>)",
+        },
+        primary: {
+          DEFAULT: "hsl(var(--primary) / <alpha-value>)",
+          foreground: "hsl(var(--primary-foreground) / <alpha-value>)",
+        },
+        secondary: {
+          DEFAULT: "hsl(var(--secondary) / <alpha-value>)",
+          foreground: "hsl(var(--secondary-foreground) / <alpha-value>)",
+        },
+        muted: {
+          DEFAULT: "hsl(var(--muted) / <alpha-value>)",
+          foreground: "hsl(var(--muted-foreground) / <alpha-value>)",
+        },
+        accent: {
+          DEFAULT: "hsl(var(--accent) / <alpha-value>)",
+          foreground: "hsl(var(--accent-foreground) / <alpha-value>)",
+        },
+        destructive: {
+          DEFAULT: "hsl(var(--destructive) / <alpha-value>)",
+          foreground: "hsl(var(--destructive-foreground) / <alpha-value>)",
+        },
+        border: "hsl(var(--border) / <alpha-value>)",
+        input: "hsl(var(--input) / <alpha-value>)",
+        ring: "hsl(var(--ring) / <alpha-value>)",
+      },
+      borderRadius: {
+        lg: "var(--radius)",
+        md: "calc(var(--radius) - 2px)",
+        sm: "calc(var(--radius) - 4px)",
+      },
+      fontFamily: { sans: ["Inter", "system-ui", "sans-serif"] },
+    },
+  },
+};
 
-const FALLBACK_PREVIEW_HTML = `<!doctype html>
+/**
+ * Build the HTML shell served at /public/index.html. The Tailwind Play CDN is
+ * injected separately via the SandpackProvider `externalResources` option (the
+ * reliable mechanism in the classic bundler). This inline script just waits for
+ * that CDN to appear and applies our theme config — robust to load ordering,
+ * since the Play CDN re-generates styles whenever `tailwind.config` is set.
+ */
+function buildPreviewShell(): string {
+  const cfg = JSON.stringify(PREVIEW_TAILWIND_CONFIG);
+  return `<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      (function () {
+        var cfg = ${cfg};
+        (function apply() {
+          if (window.tailwind) {
+            window.tailwind.config = cfg;
+          } else {
+            setTimeout(apply, 20);
+          }
+        })();
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
   </body>
 </html>`;
+}
 
 export function LivePreview({ projectFiles, viewerKey }: PreviewProps) {
   const { files, dependencies, packageDeps } = useMemo(() => {
     const fileMap: Record<string, string> = {};
     let pkgDeps: Record<string, string> = { ...STANDARD_DEPENDENCIES };
-    let html: string | undefined;
 
     for (const f of projectFiles) {
       if (f.path === "package.json") {
@@ -224,15 +288,13 @@ export function LivePreview({ projectFiles, viewerKey }: PreviewProps) {
         }
         continue;
       }
-      if (f.path === "index.html") {
-        html = f.content;
-        continue;
-      }
+      // index.html is a system shell; the preview supplies its own (below).
+      if (f.path === "index.html") continue;
       fileMap["/" + f.path] = f.content;
     }
 
     // The classic bundler reads its HTML shell from /public/index.html.
-    fileMap["/public/index.html"] = toPreviewHtml(html);
+    fileMap["/public/index.html"] = buildPreviewShell();
 
     return { files: fileMap, dependencies: pkgDeps, packageDeps: pkgDeps };
   }, [projectFiles]);
@@ -258,6 +320,8 @@ export function LivePreview({ projectFiles, viewerKey }: PreviewProps) {
         recompileMode: "delayed",
         recompileDelay: 300,
         bundlerTimeOut: 90000,
+        // The reliable way to load the Tailwind Play CDN into the preview iframe.
+        externalResources: ["https://cdn.tailwindcss.com"],
       }}
       style={{ height: "100%", display: "flex", flexDirection: "column" }}
     >
