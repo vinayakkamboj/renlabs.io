@@ -27,11 +27,12 @@ export async function GET(req: NextRequest) {
     } = await supabase.auth.getUser();
     if (!user) return Response.json({ files: [] });
 
+    // Access is enforced by RLS (owner or accepted collaborator); no user_id
+    // filter so collaborators load the shared project's files too.
     const { data } = await supabase
       .from("project_files")
       .select("path, content")
-      .eq("project_id", projectId)
-      .eq("user_id", user.id);
+      .eq("project_id", projectId);
 
     return Response.json({ files: (data ?? []) as ProjectFile[] });
   } catch {

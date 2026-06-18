@@ -1,27 +1,51 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { Check, Loader2, Mail, UserPlus, X } from "lucide-react";
-import { inviteCollaborator } from "@/lib/actions/collaborators";
+import { useEffect, useState, useTransition } from "react";
+import { Clock, Loader2, Mail, UserPlus, X } from "lucide-react";
+import {
+  inviteCollaborator,
+  getCollaborators,
+  type CollaboratorRow,
+} from "@/lib/actions/collaborators";
 
 interface InviteModalProps {
   projectId: string;
   onClose: () => void;
 }
 
+const STATUS_LABEL: Record<CollaboratorRow["status"], string> = {
+  pending: "Pending",
+  accepted: "Active",
+  declined: "Declined",
+};
+
+const STATUS_STYLE: Record<CollaboratorRow["status"], string> = {
+  pending: "text-signal-amber",
+  accepted: "text-signal-green",
+  declined: "text-dusk-faint",
+};
+
 export function InviteModal({ projectId, onClose }: InviteModalProps) {
   const [email, setEmail] = useState("");
-  const [invited, setInvited] = useState<string[]>([]);
+  const [collaborators, setCollaborators] = useState<CollaboratorRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
+  useEffect(() => {
+    getCollaborators(projectId).then(setCollaborators).catch(() => {});
+  }, [projectId]);
+
   function submit() {
-    if (!email.trim()) return;
+    const value = email.trim().toLowerCase();
+    if (!value) return;
     setError(null);
     startTransition(async () => {
-      const res = await inviteCollaborator(projectId, email.trim());
+      const res = await inviteCollaborator(projectId, value);
       if (res.ok) {
-        setInvited((prev) => [...prev, email.trim().toLowerCase()]);
+        setCollaborators((prev) => {
+          const without = prev.filter((c) => c.email !== value);
+          return [...without, { email: value, status: "pending" }];
+        });
         setEmail("");
       } else {
         setError(res.error);
@@ -35,12 +59,14 @@ export function InviteModal({ projectId, onClose }: InviteModalProps) {
         className="absolute inset-0 bg-carbon/80 backdrop-blur-sm"
         onClick={onClose}
       />
-      <div className="relative w-full max-w-md rounded-2xl border border-carbon-line bg-carbon-raised shadow-2xl">
+      <div className="relative w-full max-w-md overflow-hidden rounded-2xl border border-carbon-line bg-carbon-raised shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-carbon-line px-5 py-4">
           <div className="flex items-center gap-2">
             <UserPlus className="size-4 text-brass" />
-            <span className="text-[14px] font-medium text-dusk">Invite collaborator</span>
+            <span className="text-[14px] font-medium text-dusk">
+              Invite collaborator
+            </span>
           </div>
           <button
             onClick={onClose}
@@ -52,9 +78,10 @@ export function InviteModal({ projectId, onClose }: InviteModalProps) {
 
         {/* Body */}
         <div className="p-5">
-          <p className="text-[13px] text-dusk-muted">
-            Invite someone to collaborate on this project. They will get access to view and edit
-            it in the workspace.
+          <p className="text-[13px] leading-relaxed text-dusk-muted">
+            Invite someone by email. They&apos;ll get a request to collaborate
+            and, once they accept, the project appears in their workspace to view
+            and edit.
           </p>
 
           <div className="mt-4 flex gap-2">
@@ -63,9 +90,12 @@ export function InviteModal({ projectId, onClose }: InviteModalProps) {
               <input
                 type="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setError(null);
+                }}
                 onKeyDown={(e) => e.key === "Enter" && submit()}
-                placeholder="colleague@example.com"
+                placeholder="teammate@example.com"
                 className="w-full rounded-lg border border-carbon-line bg-carbon py-2.5 pl-9 pr-3 text-[13px] text-dusk outline-none placeholder:text-dusk-faint focus:border-carbon-line-strong"
               />
             </div>
@@ -74,34 +104,51 @@ export function InviteModal({ projectId, onClose }: InviteModalProps) {
               disabled={!email.trim() || pending}
               className="flex h-10 items-center gap-1.5 rounded-lg bg-brass px-4 text-[13px] font-medium text-carbon transition-colors hover:bg-brass-deep disabled:opacity-40"
             >
-              {pending ? <Loader2 className="size-3.5 animate-spin" /> : "Invite"}
+              {pending ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                "Send"
+              )}
             </button>
           </div>
 
-          {error && (
-            <p className="mt-2 text-[12px] text-signal-red">{error}</p>
-          )}
+          {error && <p className="mt-2 text-[12px] text-signal-red">{error}</p>}
 
-          {invited.length > 0 && (
-            <ul className="mt-4 space-y-1.5">
-              {invited.map((e) => (
-                <li
-                  key={e}
-                  className="flex items-center gap-2 rounded-lg border border-carbon-line bg-carbon px-3 py-2 text-[12.5px]"
-                >
-                  <Check className="size-3.5 shrink-0 text-brass" />
-                  <span className="flex-1 truncate text-dusk-muted">{e}</span>
-                  <span className="text-[11px] text-dusk-faint">Invite sent</span>
-                </li>
-              ))}
-            </ul>
+          {collaborators.length > 0 && (
+            <div className="mt-5">
+              <p className="mb-2 font-mono text-[10.5px] uppercase tracking-[0.14em] text-dusk-faint">
+                People on this project
+              </p>
+              <ul className="space-y-1.5">
+                {collaborators.map((c) => (
+                  <li
+                    key={c.email}
+                    className="flex items-center gap-2 rounded-lg border border-carbon-line bg-carbon px-3 py-2 text-[12.5px]"
+                  >
+                    <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-carbon-high text-[11px] font-medium uppercase text-dusk-muted">
+                      {c.email[0]}
+                    </span>
+                    <span className="flex-1 truncate text-dusk-muted">
+                      {c.email}
+                    </span>
+                    <span
+                      className={`flex items-center gap-1 text-[11px] ${STATUS_STYLE[c.status]}`}
+                    >
+                      {c.status === "pending" && <Clock className="size-3" />}
+                      {STATUS_LABEL[c.status]}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </div>
 
         {/* Footer */}
-        <div className="border-t border-carbon-line px-5 py-3.5">
-          <p className="text-[11.5px] text-dusk-faint">
-            Invites are pending until your collaborator signs in with the invited email.
+        <div className="border-t border-carbon-line bg-carbon/40 px-5 py-3.5">
+          <p className="text-[11.5px] leading-relaxed text-dusk-faint">
+            Only people with a Ren Code account can be invited. They&apos;ll see
+            your request on their dashboard.
           </p>
         </div>
       </div>

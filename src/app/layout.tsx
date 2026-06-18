@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, Newsreader, JetBrains_Mono } from "next/font/google";
+import { Toaster } from "sonner";
 import "./globals.css";
 
 const inter = Inter({
@@ -44,6 +45,17 @@ export default function RootLayout({
     <html lang="en" className={`${inter.variable} ${newsreader.variable} ${jetbrains.variable}`}>
       <body className="bg-paper font-sans text-ink antialiased">
         {children}
+        <Toaster
+          theme="dark"
+          position="bottom-right"
+          toastOptions={{
+            style: {
+              background: "#1d1c19",
+              border: "1px solid #2b2925",
+              color: "#e9e4d8",
+            },
+          }}
+        />
       </body>
     </html>
   );

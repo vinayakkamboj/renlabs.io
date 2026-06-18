@@ -44,9 +44,10 @@ export default async function WorkspacePage({ params }: PageProps) {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // Fetch the project and any saved files in parallel — both only need the
-  // project id and user id, so there's no reason to wait for one before the
-  // other. This removes a full network round-trip from the page load.
+  // Fetch the project and any saved files in parallel. Access is enforced by
+  // RLS (owner or accepted collaborator), so we don't filter by user_id here —
+  // that's what lets invited collaborators open a shared project. Running both
+  // queries together also removes a full network round-trip from the load.
   const [projectResult, savedResult] = await Promise.all([
     supabase
       .from("projects")
@@ -54,13 +55,11 @@ export default async function WorkspacePage({ params }: PageProps) {
         "id, name, kind, repository_id, repositories ( full_name, default_branch )",
       )
       .eq("id", id)
-      .eq("user_id", user.id)
       .single(),
     supabase
       .from("project_files")
       .select("path, content")
-      .eq("project_id", id)
-      .eq("user_id", user.id),
+      .eq("project_id", id),
   ]);
 
   const project = projectResult.data;

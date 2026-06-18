@@ -3,9 +3,12 @@ import { Coins, FolderGit2, Github, Sparkles, Users } from "lucide-react";
 import { StatusBadge } from "@/components/platform/widgets";
 import { ProjectCardActions } from "@/components/platform/project-card-actions";
 import { GitHubImportButton } from "@/components/platform/github-import-button";
+import { CollaborationRequests } from "@/components/platform/collaboration-requests";
+import { getIncomingInvitations } from "@/lib/actions/collaborators";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import { getCreditsBalance, ensureCreditsAccount } from "@/lib/credits/server";
 import { redirect } from "next/navigation";
+import type { IncomingInvitation } from "@/lib/actions/collaborators";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +34,7 @@ export default async function DashboardPage() {
   let creditBalance: number | null = null;
   let projects: Project[] = [];
   let sharedProjects: Project[] = [];
+  let incomingInvitations: IncomingInvitation[] = [];
 
   if (isSupabaseConfigured()) {
     const supabase = await createClient();
@@ -57,11 +61,14 @@ export default async function DashboardPage() {
     projects = listResult.data ?? [];
 
     try {
-      const { data: collabs } = await supabase
-        .from("project_collaborators")
-        .select("project_id, projects(id, name, kind, status, updated_at)")
-        .eq("invited_email", user.email)
-        .eq("status", "accepted");
+      const [{ data: collabs }, incoming] = await Promise.all([
+        supabase
+          .from("project_collaborators")
+          .select("project_id, projects(id, name, kind, status, updated_at)")
+          .eq("invited_user_id", user.id)
+          .eq("status", "accepted"),
+        getIncomingInvitations(),
+      ]);
 
       if (collabs) {
         sharedProjects = collabs
@@ -71,8 +78,9 @@ export default async function DashboardPage() {
           })
           .filter(Boolean) as Project[];
       }
+      incomingInvitations = incoming;
     } catch {
-      /* table may not exist */
+      /* tables may not exist yet */
     }
   }
 
@@ -114,6 +122,8 @@ export default async function DashboardPage() {
           </Link>
         </div>
       </div>
+
+      <CollaborationRequests invitations={incomingInvitations} />
 
       {/* Your Projects */}
       <section>
