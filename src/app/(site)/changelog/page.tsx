@@ -17,7 +17,7 @@ const entries = [
       "Ren Code workspace — projects, repositories, pull requests, conversations.",
       "Google and GitHub OAuth authentication via Supabase.",
       "Documentation site with getting started, API reference, and best practices.",
-      "Ren API platform page and OpenAI-compatible endpoint design.",
+      "Ren API platform page and the Astra HTTPS endpoint design.",
       "Astra model in active development — focus areas published.",
     ],
   },

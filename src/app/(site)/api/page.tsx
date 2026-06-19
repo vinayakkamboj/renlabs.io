@@ -8,7 +8,7 @@ import { PageIntro } from "@/components/site/page-intro";
 export const metadata: Metadata = {
   title: "Ren API",
   description:
-    "Integrate Astra into your engineering workflows. An OpenAI-compatible API for repository understanding, code generation, and agent workflows.",
+    "Integrate Astra into your engineering workflows. One simple HTTPS endpoint for repository understanding, code generation, and agent workflows.",
 };
 
 const capabilities = [
@@ -38,18 +38,18 @@ const capabilities = [
   },
 ];
 
-const snippet = `curl https://api.ren.ai/v1/chat/completions \\
+const snippet = `curl https://api.ren.ai/v1/messages \\
   -H "Authorization: Bearer $REN_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "astra",
+    "stream": true,
     "messages": [
       {
         "role": "user",
         "content": "Add cursor pagination to the activity feed and open a PR."
       }
-    ],
-    "stream": true
+    ]
   }'`;
 
 export default function ApiPage() {
@@ -62,7 +62,7 @@ export default function ApiPage() {
             Ren <em className="text-bronze-deep">API</em>.
           </>
         }
-        lede="Integrate Astra into your engineering workflows. Astra is served behind a stable, OpenAI-compatible endpoint, so the tools you already use work with a base URL and a model id."
+        lede="Integrate Astra into your engineering workflows. One stable HTTPS endpoint, authenticated with your Ren API key — no SDK to install, nothing else to wire up."
       >
         <div className="mt-10 flex flex-wrap gap-4">
           <Button href="/docs/api-reference" size="lg">
@@ -83,12 +83,12 @@ export default function ApiPage() {
                 One endpoint
               </span>
               <h2 className="mt-5 max-w-[18ch] font-serif text-display font-normal text-ink text-balance">
-                Familiar by design.
+                Simple by design.
               </h2>
               <p className="mt-6 max-w-[48ch] text-lede text-graphite text-pretty">
-                Point an OpenAI-compatible client at the Ren base URL, set the
-                model to <code className="rounded bg-paper-deep px-1.5 py-0.5 font-mono text-[0.85em] text-ink">astra</code>, and
-                start sending engineering tasks. No new SDK to learn.
+                Send an HTTPS request with your API key, set the model to{" "}
+                <code className="rounded bg-paper-deep px-1.5 py-0.5 font-mono text-[0.85em] text-ink">astra</code>, and
+                start sending engineering tasks. No SDK to install, no base URL juggling.
               </p>
             </Reveal>
             <Reveal delay={0.1}>

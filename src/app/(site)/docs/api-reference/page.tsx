@@ -21,13 +21,13 @@ export default function ApiReferencePage() {
       <DocHeader
         eyebrow="Develop"
         title="API reference"
-        intro="The Ren API lets you drive Astra programmatically. The model is served behind a stable, OpenAI-compatible endpoint, so existing tooling works with a base URL and a model id."
+        intro="The Ren API lets you drive Astra programmatically over a single, stable HTTPS endpoint. Authenticate with your Ren API key and send a request — there's no SDK to install and nothing else to configure."
       />
 
       <DocCallout label="Preview">
         The programmatic API is in active development. This page documents the
-        shape it takes today; capabilities and authentication will be finalized
-        before general availability. See{" "}
+        shape it takes today; capabilities will be finalized before general
+        availability. See{" "}
         <Link href="/api" className="text-bronze-deep underline-offset-4 hover:underline">
           Ren API
         </Link>{" "}
@@ -36,51 +36,70 @@ export default function ApiReferencePage() {
 
       <DocH2>Authentication</DocH2>
       <DocP>
-        Requests are authenticated with a bearer token. Keep your key on the
-        server — never ship it to a browser or commit it to a repository.
+        Every request carries your Ren API key as a bearer token. Create and
+        manage keys in your{" "}
+        <Link
+          href="/dashboard/api"
+          className="text-bronze-deep underline-offset-4 hover:underline"
+        >
+          API console
+        </Link>
+        . Keep keys on the server — never ship one to a browser or commit it to a
+        repository.
       </DocP>
       <DocCode title="Authorization header" language="http">{`Authorization: Bearer $REN_API_KEY`}</DocCode>
 
-      <DocH2>Chat completions</DocH2>
+      <DocH2>Sending a message</DocH2>
       <DocP>
-        Astra speaks the OpenAI-compatible chat completions format. Point your
-        client at the Ren base URL and set the model id to{" "}
+        Post a list of messages to the Astra endpoint and set the model id to{" "}
         <code className="rounded bg-paper-deep px-1.5 py-0.5 font-mono text-[13px] text-ink">
           astra
         </code>
-        .
+        . Set{" "}
+        <code className="rounded bg-paper-deep px-1.5 py-0.5 font-mono text-[13px] text-ink">
+          stream
+        </code>{" "}
+        to receive the reply as server-sent events as it is generated.
       </DocP>
-      <DocCode title="Request" language="bash">{`curl https://api.ren.ai/v1/chat/completions \\
+      <DocCode title="Request" language="bash">{`curl https://api.ren.ai/v1/messages \\
   -H "Authorization: Bearer $REN_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
     "model": "astra",
+    "stream": true,
     "messages": [
       { "role": "user", "content": "Explain how billing pagination works in this repo." }
-    ],
-    "stream": true
+    ]
   }'`}</DocCode>
 
-      <DocH2>Using an existing SDK</DocH2>
+      <DocH2>From your code</DocH2>
       <DocP>
-        Because the endpoint is OpenAI-compatible, you can use the official
-        OpenAI client libraries by overriding the base URL.
+        Any language that can make an HTTPS request can call Astra — no client
+        library required. Here it is with the built-in <code className="rounded bg-paper-deep px-1.5 py-0.5 font-mono text-[13px] text-ink">fetch</code>,
+        reading the stream as it arrives.
       </DocP>
-      <DocCode title="TypeScript" language="ts">{`import OpenAI from "openai";
-
-const ren = new OpenAI({
-  apiKey: process.env.REN_API_KEY,
-  baseURL: "https://api.ren.ai/v1",
+      <DocCode title="TypeScript" language="ts">{`const res = await fetch("https://api.ren.ai/v1/messages", {
+  method: "POST",
+  headers: {
+    Authorization: \`Bearer \${process.env.REN_API_KEY}\`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    model: "astra",
+    stream: true,
+    messages: [
+      { role: "user", content: "Refactor the cursor pagination to coalesce nulls." },
+    ],
+  }),
 });
 
-const stream = await ren.chat.completions.create({
-  model: "astra",
-  stream: true,
-  messages: [{ role: "user", content: "Refactor the cursor pagination to coalesce nulls." }],
-});
-
-for await (const chunk of stream) {
-  process.stdout.write(chunk.choices[0]?.delta?.content ?? "");
+// Astra streams the reply as server-sent events — read them as they arrive.
+const reader = res.body!.getReader();
+const decoder = new TextDecoder();
+for (;;) {
+  const { done, value } = await reader.read();
+  if (done) break;
+  process.stdout.write(decoder.decode(value));
 }`}</DocCode>
 
       <DocH2>Planned capabilities</DocH2>

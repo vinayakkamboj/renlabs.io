@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 
 const navLinks = [
   { href: "/dashboard", label: "Projects", exact: true },
+  { href: "/dashboard/api", label: "API" },
   { href: "/dashboard/billing", label: "Billing" },
   { href: "/dashboard/integrations", label: "Integrations" },
 ];
