@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { Coins, Sparkles, Zap, Cpu, Wand2, Check, ExternalLink } from "lucide-react";
+import { Coins, Check } from "lucide-react";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import { getCreditsBalance, ensureCreditsAccount } from "@/lib/credits/server";
 import {
@@ -15,10 +15,12 @@ export const metadata: Metadata = { title: "Billing" };
 export const dynamic = "force-dynamic";
 
 const TIER_INFO = [
-  { id: "spark", name: "Astra Flash", icon: Zap, desc: "Fastest — quick fixes", credits: CREDITS_PER_BUILD.spark },
-  { id: "flow", name: "Astra Flow", icon: Sparkles, desc: "Balanced quality", credits: CREDITS_PER_BUILD.flow },
-  { id: "forge", name: "Astra Pro", icon: Cpu, desc: "Complex builds", credits: CREDITS_PER_BUILD.forge },
-  { id: "apex", name: "Astra Max", icon: Wand2, desc: "Best quality", credits: CREDITS_PER_BUILD.apex },
+  {
+    id: "v1",
+    name: "Astra v1",
+    desc: "Plans, writes, and ships your app",
+    credits: CREDITS_PER_BUILD.v1,
+  },
 ];
 
 export default async function BillingPage() {
@@ -162,13 +164,10 @@ export default async function BillingPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-carbon-line/60">
-              {TIER_INFO.map(({ name, icon: Icon, desc, credits }) => (
+              {TIER_INFO.map(({ name, desc, credits }) => (
                 <tr key={name} className="bg-carbon-raised hover:bg-carbon-high/50 transition-colors">
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <Icon className="size-3.5 text-brass" />
-                      <span className="font-medium text-dusk">{name}</span>
-                    </div>
+                    <span className="font-medium text-dusk">{name}</span>
                   </td>
                   <td className="px-4 py-3 font-mono text-dusk tnum">{credits}</td>
                   <td className="px-4 py-3 font-mono text-dusk-muted tnum">
@@ -236,7 +235,9 @@ function txLabel(type: string, tier: string | null): string {
 }
 
 function tierName(tier: string | null): string {
+  // Current model plus legacy tier ids kept for historical transaction rows.
   const map: Record<string, string> = {
+    v1: "v1",
     spark: "Flash",
     flow: "Flow",
     forge: "Pro",

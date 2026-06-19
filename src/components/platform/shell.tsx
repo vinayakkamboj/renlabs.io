@@ -20,7 +20,7 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
       <header className="sticky top-0 z-40 flex h-14 items-center gap-4 border-b border-carbon-line bg-carbon/95 px-6 backdrop-blur-md">
         <Link href="/dashboard" className="mr-2 flex shrink-0 items-center gap-2">
           <RenMark className="size-5 text-brass" />
-          <span className="font-serif text-[1.05rem] font-medium tracking-tight">Ren</span>
+          <span className="font-serif text-[1.05rem] font-medium tracking-tight">Ren Labs</span>
         </Link>
 
         <nav className="flex items-center gap-0.5">

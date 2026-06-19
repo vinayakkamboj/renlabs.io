@@ -24,8 +24,8 @@ const jetbrains = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Ren AI — Building Intelligence Through Reasoning",
-    template: "%s — Ren AI",
+    default: "Ren Labs — Building Intelligence Through Reasoning",
+    template: "%s — Ren Labs",
   },
   description:
     "Ren AI develops advanced reasoning systems, coding models, and autonomous agents designed to expand human capability.",

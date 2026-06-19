@@ -3,8 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
   ArrowUp,
-  Check,
-  ChevronDown,
   FileCode2,
   Layers,
   Loader2,
@@ -13,7 +11,7 @@ import {
 } from "lucide-react";
 import { RenMark } from "@/components/ui/wordmark";
 import { useWorkspaceStore } from "@/lib/builder/store";
-import { MODEL_TIERS, type ModelTierId } from "@/lib/builder/model-tiers";
+import { ASTRA_MODEL } from "@/lib/builder/model-tiers";
 import type { BuildMessage } from "@/lib/builder/types";
 import { cn } from "@/lib/utils";
 
@@ -51,7 +49,7 @@ export function ChatPanel() {
       <div className="flex h-11 shrink-0 items-center gap-2.5 border-b border-carbon-line px-4">
         <RenMark className="size-4 text-brass" />
         <span className="font-serif text-[1.05rem] font-medium tracking-tight text-dusk">
-          Ren
+          Ren Labs
         </span>
         <span className="ml-auto rounded-full border border-carbon-line px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.18em] text-dusk-faint">
           Astra
@@ -89,7 +87,7 @@ export function ChatPanel() {
 
       {/* Composer */}
       <div className="shrink-0 border-t border-carbon-line p-3">
-        <ModelPicker />
+        <ModelIndicator />
         <div className="mt-2 overflow-hidden rounded-xl border border-carbon-line bg-carbon-raised focus-within:border-carbon-line-strong">
           <textarea
             value={input}
@@ -169,106 +167,23 @@ function Message({ message }: { message: BuildMessage }) {
 }
 
 /**
- * Capability indicator — ascending bars (1–4) that read as "more capable",
- * replacing the raw Low/Medium/High/Max labels with a cleaner visual.
+ * Single-model indicator. Astra runs one model, so this is a calm status line
+ * rather than a picker — a live dot, the model name, and the Ren Labs mark.
  */
-function CapabilityBars({ level, active }: { level: number; active?: boolean }) {
+function ModelIndicator() {
   return (
-    <span className="flex items-end gap-[2.5px]" aria-hidden>
-      {[0, 1, 2, 3].map((i) => (
-        <span
-          key={i}
-          className={cn(
-            "w-[3px] rounded-full",
-            i === 0 && "h-[6px]",
-            i === 1 && "h-[9px]",
-            i === 2 && "h-[12px]",
-            i === 3 && "h-[15px]",
-            i < level
-              ? active
-                ? "bg-brass"
-                : "bg-dusk-muted"
-              : "bg-carbon-line-strong",
-          )}
-        />
-      ))}
-    </span>
-  );
-}
-
-function ModelPicker() {
-  const modelTier = useWorkspaceStore((s) => s.modelTier);
-  const setModelTier = useWorkspaceStore((s) => s.setModelTier);
-  const [open, setOpen] = useState(false);
-  const activeIndex = MODEL_TIERS.findIndex((t) => t.id === modelTier);
-  const active = MODEL_TIERS[activeIndex] ?? MODEL_TIERS[0];
-
-  return (
-    <div className="relative">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between rounded-xl border border-carbon-line bg-carbon-raised px-3 py-2.5 text-left transition-colors hover:border-carbon-line-strong"
-      >
-        <span className="flex items-center gap-2.5">
-          <CapabilityBars level={activeIndex + 1} active />
-          <span className="text-[12.5px] font-medium text-dusk">
-            {active.brandName}
-          </span>
-        </span>
-        <ChevronDown
-          className={cn(
-            "size-3.5 text-dusk-faint transition-transform",
-            open && "rotate-180",
-          )}
-        />
-      </button>
-
-      {open && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute bottom-full left-0 z-20 mb-2 w-full overflow-hidden rounded-xl border border-carbon-line-strong bg-carbon-raised shadow-2xl">
-            <div className="border-b border-carbon-line px-3 py-2">
-              <p className="font-mono text-[9.5px] uppercase tracking-[0.18em] text-dusk-faint">
-                Astra models
-              </p>
-            </div>
-            {MODEL_TIERS.map((tier, i) => {
-              const isActive = tier.id === modelTier;
-              return (
-                <button
-                  key={tier.id}
-                  onClick={() => {
-                    setModelTier(tier.id as ModelTierId);
-                    setOpen(false);
-                  }}
-                  className={cn(
-                    "flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-carbon-high",
-                    isActive && "bg-carbon-high",
-                  )}
-                >
-                  <CapabilityBars level={i + 1} active={isActive} />
-                  <div className="min-w-0 flex-1">
-                    <span
-                      className={cn(
-                        "text-[12.5px] font-medium",
-                        isActive ? "text-brass" : "text-dusk",
-                      )}
-                    >
-                      {tier.brandName}
-                    </span>
-                    <p className="mt-0.5 text-[11px] leading-relaxed text-dusk-faint">
-                      {tier.tagline}
-                    </p>
-                  </div>
-                  {isActive && (
-                    <Check className="size-3.5 shrink-0 text-brass" />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </>
-      )}
+    <div className="flex items-center gap-2 rounded-xl border border-carbon-line bg-carbon-raised px-3 py-2">
+      <span className="relative flex size-1.5">
+        <span className="absolute inline-flex size-full animate-ping rounded-full bg-signal-green/70" />
+        <span className="relative inline-flex size-1.5 rounded-full bg-signal-green" />
+      </span>
+      <span className="text-[12.5px] font-medium text-dusk">
+        {ASTRA_MODEL.brandName}
+      </span>
+      <span className="ml-auto flex items-center gap-1.5 text-[11px] text-dusk-faint">
+        <RenMark className="size-3 text-brass/70" />
+        Ren Labs
+      </span>
     </div>
   );
 }
@@ -295,7 +210,7 @@ function EmptyState() {
       <div className="flex items-center gap-2">
         <RenMark className="size-5 text-brass" />
         <span className="font-serif text-[1.25rem] font-medium tracking-tight text-dusk">
-          Ren
+          Ren Labs
         </span>
       </div>
       <p className="mt-4 text-[14px] font-semibold text-dusk">

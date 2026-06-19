@@ -34,7 +34,7 @@ export function Wordmark({
     <span className={cn("inline-flex items-center gap-2.5", className)}>
       <RenMark className={markClassName} />
       <span className="font-serif text-[1.35rem] font-medium tracking-tight">
-        Ren
+        Ren Labs
       </span>
     </span>
   );

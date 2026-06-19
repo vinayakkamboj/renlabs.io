@@ -113,7 +113,7 @@ export function SiteFooter() {
         <div className="rule mt-16" />
 
         <div className="flex flex-col gap-4 pt-8 text-[13px] text-graphite-soft sm:flex-row sm:items-center sm:justify-between">
-          <p>© {new Date().getFullYear()} Ren AI. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} Ren Labs. All rights reserved.</p>
           <p className="font-mono text-[10.5px] uppercase tracking-[0.12em]">
             Evidence over hype
           </p>

@@ -13,22 +13,15 @@
 import type { ModelTierId } from "@/lib/builder/model-tiers";
 
 // ---------------------------------------------------------------------------
-// Per-build credit cost by model tier
+// Per-build credit cost
 // ---------------------------------------------------------------------------
 //
-// Calculation basis (typical build: 8k input tokens + 10k output tokens):
-//
-//   Tier         API Cost/build    Our charge   Margin
-//   Flash (H4)   ~$0.046           $0.08 (8c)   ~73%
-//   Flow  (S4)   ~$0.174           $0.35 (35c)  ~101%
-//   Pro   (O4)   ~$0.870           $1.75 (175c) ~101%
-//   Max   (F5)   ~$0.870           $2.00 (200c) ~130%
+// Astra v1 runs on Sonnet-class capability. A typical build (~8k input +
+// ~10k output tokens) costs ~$0.17 in API spend; we charge 35 credits ($0.35),
+// roughly a 100% markup to cover hosting, support, and margin.
 //
 export const CREDITS_PER_BUILD: Record<ModelTierId, number> = {
-  spark: 8,   // Astra Flash
-  flow: 35,   // Astra Flow
-  forge: 175, // Astra Pro
-  apex: 200,  // Astra Max
+  v1: 35, // Astra v1
 };
 
 // ---------------------------------------------------------------------------

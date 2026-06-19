@@ -86,37 +86,59 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-8">
-      {/* Credit strip */}
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-carbon-line bg-carbon-raised px-5 py-3.5">
-        <div className="flex items-center gap-3">
-          <div className="flex size-8 items-center justify-center rounded-lg border border-carbon-line bg-carbon">
-            <Coins className="size-4 text-brass" strokeWidth={1.7} />
-          </div>
-          <div>
-            <p className="text-[13px] font-medium text-dusk">
-              {creditBalance !== null ? (
-                <>
-                  <span className="font-mono tnum text-brass">{creditBalance.toLocaleString()}</span>
-                  {" "}credits remaining
-                </>
-              ) : (
-                "First Free Credit"
-              )}
-            </p>
-            <p className="text-[11.5px] text-dusk-faint">
-              {creditBalance !== null
-                ? `≈ $${(creditBalance / 100).toFixed(2)} · 1 credit = $0.01`
-                : "100 free credits on signup · worth $1.00"}
-            </p>
-          </div>
+      {/* Welcome header + primary actions */}
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="font-serif text-[1.85rem] leading-tight text-dusk">
+            Your projects
+          </h1>
+          <p className="mt-1.5 text-[13.5px] text-dusk-muted">
+            Pick up where you left off, or start something new with Astra.
+          </p>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-3 text-[12px] text-dusk-faint">
-            <span>{projectCount} project{projectCount !== 1 ? "s" : ""}</span>
-          </div>
+        <div className="flex items-center gap-2">
+          <GitHubImportButton />
+          <Link
+            href="/dashboard/projects/new"
+            className="flex h-9 items-center gap-1.5 rounded-lg bg-brass px-4 text-[13px] font-medium text-carbon transition-colors hover:bg-brass-deep"
+          >
+            <Sparkles className="size-3.5" />
+            New project
+          </Link>
+        </div>
+      </div>
+
+      {/* Credits card */}
+      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-carbon-line bg-carbon-raised px-5 py-4">
+        <div className="flex size-10 items-center justify-center rounded-xl border border-carbon-line bg-carbon">
+          <Coins className="size-[18px] text-brass" strokeWidth={1.7} />
+        </div>
+        <div>
+          <p className="text-[14px] font-medium text-dusk">
+            {creditBalance !== null ? (
+              <>
+                <span className="font-mono tnum text-brass">
+                  {creditBalance.toLocaleString()}
+                </span>{" "}
+                credits
+              </>
+            ) : (
+              "100 free credits"
+            )}
+          </p>
+          <p className="text-[11.5px] text-dusk-faint">
+            {creditBalance !== null
+              ? `≈ $${(creditBalance / 100).toFixed(2)} available · 1 credit = $0.01`
+              : "Worth $1.00 — yours on signup"}
+          </p>
+        </div>
+        <div className="ml-auto flex items-center gap-4">
+          <span className="text-[12px] text-dusk-faint">
+            {projectCount} project{projectCount !== 1 ? "s" : ""}
+          </span>
           <Link
             href="/dashboard/billing"
-            className="flex h-7 items-center gap-1.5 rounded-lg border border-carbon-line bg-carbon px-3 text-[12px] text-dusk-muted transition-colors hover:border-carbon-line-strong hover:text-dusk"
+            className="flex h-8 items-center gap-1.5 rounded-lg border border-carbon-line bg-carbon px-3.5 text-[12.5px] text-dusk-muted transition-colors hover:border-carbon-line-strong hover:text-dusk"
           >
             Buy credits
           </Link>
@@ -125,21 +147,8 @@ export default async function DashboardPage() {
 
       <CollaborationRequests invitations={incomingInvitations} />
 
-      {/* Your Projects */}
+      {/* Projects grid */}
       <section>
-        <div className="mb-5 flex items-center justify-between gap-3">
-          <h1 className="font-serif text-[1.5rem] text-dusk">Your Projects</h1>
-          <div className="flex items-center gap-2">
-            <GitHubImportButton />
-            <Link
-              href="/dashboard/projects/new"
-              className="flex h-8 items-center gap-1.5 rounded-lg bg-brass px-3 text-[12.5px] font-medium text-carbon transition-colors hover:bg-brass-deep"
-            >
-              + New project
-            </Link>
-          </div>
-        </div>
-
         {projects.length === 0 ? (
           <EmptyProjects />
         ) : (
