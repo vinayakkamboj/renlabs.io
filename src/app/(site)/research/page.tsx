@@ -48,16 +48,16 @@ export default function ResearchPage() {
           ))}
         </Reveal>
 
-        {/* Version roadmap */}
+        {/* Current model */}
         <section className="mt-24">
           <Reveal>
-            <h2 className="font-serif text-display font-normal text-ink">Model roadmap</h2>
+            <h2 className="font-serif text-display font-normal text-ink">Current model</h2>
             <p className="mt-5 max-w-[54ch] text-lede text-graphite">
-              A realistic path forward. We name the generations; we do not
-              invent dates or results before they exist.
+              The generation in active development today — what actually ships,
+              with no dates or results invented before they exist.
             </p>
           </Reveal>
-          <div className="mt-12 grid gap-px overflow-hidden rounded-2xl border border-line bg-line md:grid-cols-3">
+          <div className="mt-12 overflow-hidden rounded-2xl border border-line">
             {astra.versions.map((v, i) => (
               <Reveal key={v.label} delay={Math.min(i * 0.06, 0.18)} className="bg-paper p-8">
                 <div className="flex items-center justify-between">

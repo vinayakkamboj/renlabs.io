@@ -36,12 +36,12 @@ export function ResearchModelSection() {
           </p>
         </Reveal>
 
-        {/* Version roadmap */}
+        {/* Current model */}
         <Reveal delay={0.1} className="mt-16">
           <p className="font-mono text-[10.5px] uppercase tracking-eyebrow text-paper/40">
-            Model roadmap
+            Current model
           </p>
-          <div className="mt-6 grid gap-px overflow-hidden rounded-2xl border border-paper/12 bg-paper/12 md:grid-cols-3">
+          <div className="mt-6 overflow-hidden rounded-2xl border border-paper/12">
             {astra.versions.map((v) => (
               <div key={v.label} className="bg-ink p-7">
                 <div className="flex items-center justify-between">

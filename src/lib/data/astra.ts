@@ -21,25 +21,13 @@ export const astra = {
     "It is the intelligence layer powering every Ren AI product. Ren Code is the first application built on Astra, and future products will be powered by Astra as well.",
   ],
 
-  /** Model versioning. A realistic roadmap — no dates, no benchmark claims. */
+  /** The shipping model. Only what's live — no unreleased versions. */
   versions: [
     {
       label: "Astra v1",
       phase: "Current generation",
       state: "current" as const,
       detail: "The model in active development today, powering Ren Code.",
-    },
-    {
-      label: "Astra v2",
-      phase: "Planned",
-      state: "planned" as const,
-      detail: "The next generation — deeper reasoning and broader agentic capability.",
-    },
-    {
-      label: "Astra v3",
-      phase: "Research",
-      state: "research" as const,
-      detail: "Early research directions for where the model goes next.",
     },
   ],
 
