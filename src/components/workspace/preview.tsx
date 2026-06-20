@@ -14,14 +14,23 @@ import {
   SandpackConsole,
   useSandpack,
 } from "@codesandbox/sandpack-react";
-import { ChevronDown, ChevronUp, Loader2, Package, Terminal } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  Loader2,
+  Package,
+  ScanSearch,
+  Terminal,
+} from "lucide-react";
 import { STANDARD_DEPENDENCIES } from "@/lib/builder/base-template";
+import { analyzeWebApp, type WebAppAnalysis } from "@/lib/builder/web-app";
 import type { ProjectFile } from "@/lib/builder/types";
 import { cn } from "@/lib/utils";
 
 interface PreviewProps {
   projectFiles: ProjectFile[];
   viewerKey: number;
+  projectKind?: "new" | "repository";
 }
 
 /**
@@ -271,7 +280,123 @@ function buildPreviewShell(): string {
 </html>`;
 }
 
-export function LivePreview({ projectFiles, viewerKey }: PreviewProps) {
+/**
+ * Wrapper that decides how to preview a project. Generated apps are always our
+ * client-side React template, so they run immediately. Imported repositories are
+ * first analyzed — Astra reads the structure and dependencies — then either run
+ * live (if it's a previewable web app) or show why a preview isn't available yet.
+ */
+export function LivePreview({ projectFiles, viewerKey, projectKind }: PreviewProps) {
+  if (projectKind === "repository") {
+    return <RepoPreviewGate projectFiles={projectFiles} viewerKey={viewerKey} />;
+  }
+  return <SandpackRunner projectFiles={projectFiles} viewerKey={viewerKey} />;
+}
+
+const ANALYSIS_STEPS = [
+  "Reading project files",
+  "Detecting framework & dependencies",
+  "Checking how the project is structured",
+  "Deciding how to run it",
+];
+
+function RepoPreviewGate({
+  projectFiles,
+  viewerKey,
+}: {
+  projectFiles: ProjectFile[];
+  viewerKey: number;
+}) {
+  const analysis = useMemo(() => analyzeWebApp(projectFiles), [projectFiles]);
+  const [analyzing, setAnalyzing] = useState(true);
+  const [step, setStep] = useState(0);
+
+  // A short, honest analysis pass so the user sees the project being understood
+  // before the preview resolves. Steps advance on a timer; the real detection is
+  // already computed above.
+  useEffect(() => {
+    setAnalyzing(true);
+    setStep(0);
+    const stepTimer = setInterval(() => {
+      setStep((s) => Math.min(s + 1, ANALYSIS_STEPS.length - 1));
+    }, 700);
+    const doneTimer = setTimeout(() => {
+      clearInterval(stepTimer);
+      setAnalyzing(false);
+    }, 2800);
+    return () => {
+      clearInterval(stepTimer);
+      clearTimeout(doneTimer);
+    };
+  }, [viewerKey, projectFiles]);
+
+  if (analyzing) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-5 bg-carbon px-6 text-center">
+        <div className="flex size-12 items-center justify-center rounded-2xl bg-brass/10 ring-1 ring-brass/20">
+          <ScanSearch className="size-5 animate-pulse text-brass" />
+        </div>
+        <div>
+          <p className="text-[14px] font-medium text-dusk">
+            Astra is understanding your project
+          </p>
+          <p className="mt-1 text-[12.5px] text-dusk-faint">
+            {ANALYSIS_STEPS[step]}…
+          </p>
+        </div>
+        <div className="flex items-center gap-1.5">
+          {ANALYSIS_STEPS.map((_, i) => (
+            <span
+              key={i}
+              className={cn(
+                "h-1 w-6 rounded-full transition-colors",
+                i <= step ? "bg-brass" : "bg-carbon-line-strong",
+              )}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (analysis.status !== "previewable") {
+    return <UnsupportedNotice analysis={analysis} />;
+  }
+
+  return <SandpackRunner projectFiles={projectFiles} viewerKey={viewerKey} />;
+}
+
+function UnsupportedNotice({ analysis }: { analysis: WebAppAnalysis }) {
+  const nonWeb = analysis.status === "non-web";
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-4 bg-carbon px-8 text-center">
+      <div className="flex size-12 items-center justify-center rounded-2xl border border-carbon-line bg-carbon-raised">
+        <Package className="size-5 text-dusk-faint" />
+      </div>
+      <div className="max-w-[44ch]">
+        <p className="text-[15px] font-medium text-dusk">
+          {nonWeb
+            ? "Preview isn't available for this project"
+            : `Live preview for ${analysis.framework} is coming soon`}
+        </p>
+        <p className="mt-2 text-[13px] leading-relaxed text-dusk-muted">
+          {analysis.detail}
+        </p>
+      </div>
+      <span className="rounded-full border border-carbon-line bg-carbon-raised px-3 py-1 font-mono text-[10.5px] uppercase tracking-[0.14em] text-dusk-faint">
+        Web apps supported today
+      </span>
+    </div>
+  );
+}
+
+function SandpackRunner({
+  projectFiles,
+  viewerKey,
+}: {
+  projectFiles: ProjectFile[];
+  viewerKey: number;
+}) {
   const { files, dependencies, packageDeps } = useMemo(() => {
     const fileMap: Record<string, string> = {};
     let pkgDeps: Record<string, string> = { ...STANDARD_DEPENDENCIES };

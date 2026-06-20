@@ -39,7 +39,7 @@ export default function ApiReferencePage() {
         Every request carries your Ren API key as a bearer token. Create and
         manage keys in your{" "}
         <Link
-          href="/dashboard/api"
+          href="/console"
           className="text-bronze-deep underline-offset-4 hover:underline"
         >
           API console

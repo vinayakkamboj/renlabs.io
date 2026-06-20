@@ -4,9 +4,8 @@ import { StatusBadge } from "@/components/platform/widgets";
 import { ProjectCardActions } from "@/components/platform/project-card-actions";
 import { GitHubImportButton } from "@/components/platform/github-import-button";
 import { CollaborationRequests } from "@/components/platform/collaboration-requests";
-import { getIncomingInvitations } from "@/lib/actions/collaborators";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
-import { getCreditsBalance, ensureCreditsAccount } from "@/lib/credits/server";
+import { getCreditsAccount, ensureCreditsAccount } from "@/lib/credits/server";
 import { redirect } from "next/navigation";
 import type { IncomingInvitation } from "@/lib/actions/collaborators";
 
@@ -30,8 +29,8 @@ interface Project {
 }
 
 export default async function DashboardPage() {
-  let projectCount = 0;
   let creditBalance: number | null = null;
+  let freeGenerations = 0;
   let projects: Project[] = [];
   let sharedProjects: Project[] = [];
   let incomingInvitations: IncomingInvitation[] = [];
@@ -41,48 +40,56 @@ export default async function DashboardPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) redirect("/login");
 
-    await ensureCreditsAccount(user.id);
-
-    const [pResult, creditsResult, listResult] = await Promise.all([
-      supabase
-        .from("projects")
-        .select("id", { count: "exact", head: true })
-        .eq("user_id", user.id),
-      getCreditsBalance(user.id),
+    // One parallel batch — projects, credits, shared projects, and pending
+    // invitations all fetched together. Supabase queries resolve (not throw) on
+    // error, so a missing table just yields null data instead of failing.
+    const [account, listResult, collabResult, inviteResult] = await Promise.all([
+      getCreditsAccount(user.id),
       supabase
         .from("projects")
         .select("id, name, kind, status, updated_at")
         .eq("user_id", user.id)
         .order("updated_at", { ascending: false }),
+      supabase
+        .from("project_collaborators")
+        .select("project_id, projects(id, name, kind, status, updated_at)")
+        .eq("invited_user_id", user.id)
+        .eq("status", "accepted"),
+      supabase
+        .from("project_collaborators")
+        .select("id, project_id, project_name, invited_by_email, created_at")
+        .eq("invited_user_id", user.id)
+        .eq("status", "pending")
+        .order("created_at", { ascending: false }),
     ]);
 
-    projectCount = pResult.count ?? 0;
-    creditBalance = creditsResult;
+    // Brand-new user with no credits row yet — seed it in the background so the
+    // page never blocks on a write.
+    if (!account) ensureCreditsAccount(user.id).catch(() => {});
+
+    creditBalance = account?.balance ?? null;
+    freeGenerations = account?.freeGenerations ?? (account ? 0 : 1);
     projects = listResult.data ?? [];
 
-    try {
-      const [{ data: collabs }, incoming] = await Promise.all([
-        supabase
-          .from("project_collaborators")
-          .select("project_id, projects(id, name, kind, status, updated_at)")
-          .eq("invited_user_id", user.id)
-          .eq("status", "accepted"),
-        getIncomingInvitations(),
-      ]);
-
-      if (collabs) {
-        sharedProjects = collabs
-          .map((c) => {
-            const p = c.projects as unknown as Project | null;
-            return p ? { ...p, shared: true } : null;
-          })
-          .filter(Boolean) as Project[];
-      }
-      incomingInvitations = incoming;
-    } catch {
-      /* tables may not exist yet */
+    if (collabResult.data) {
+      sharedProjects = collabResult.data
+        .map((c) => {
+          const p = c.projects as unknown as Project | null;
+          return p ? { ...p, shared: true } : null;
+        })
+        .filter(Boolean) as Project[];
     }
+
+    incomingInvitations = (inviteResult.data ?? []).map((r) => ({
+      id: r.id as string,
+      projectId: r.project_id as string,
+      projectName: (r.project_name as string) ?? "Untitled project",
+      invitedByEmail: (r.invited_by_email as string) ?? "A Ren Code user",
+      createdAt: r.created_at as string,
+    }));
   }
+
+  const projectCount = projects.length;
 
   return (
     <div className="space-y-8">
@@ -115,21 +122,30 @@ export default async function DashboardPage() {
         </div>
         <div>
           <p className="text-[14px] font-medium text-dusk">
-            {creditBalance !== null ? (
+            {creditBalance !== null && creditBalance > 0 ? (
               <>
                 <span className="font-mono tnum text-brass">
                   {creditBalance.toLocaleString()}
                 </span>{" "}
                 credits
               </>
+            ) : freeGenerations > 0 ? (
+              <>
+                <span className="font-mono tnum text-brass">
+                  {freeGenerations}
+                </span>{" "}
+                free generation{freeGenerations !== 1 ? "s" : ""}
+              </>
             ) : (
-              "100 free credits"
+              "No credits left"
             )}
           </p>
           <p className="text-[11.5px] text-dusk-faint">
-            {creditBalance !== null
+            {creditBalance !== null && creditBalance > 0
               ? `≈ $${(creditBalance / 100).toFixed(2)} available · 1 credit = $0.01`
-              : "Worth $1.00 — yours on signup"}
+              : freeGenerations > 0
+                ? "Your first build is on us — then top up with credits"
+                : "Buy credits to keep building"}
           </p>
         </div>
         <div className="ml-auto flex items-center gap-4">

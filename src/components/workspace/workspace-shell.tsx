@@ -201,6 +201,7 @@ export function WorkspaceShell({
                     <LivePreview
                       projectFiles={projectFiles}
                       viewerKey={viewerKey}
+                      projectKind={projectKind}
                     />
                   </div>
                 )}

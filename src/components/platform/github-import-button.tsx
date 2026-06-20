@@ -140,15 +140,16 @@ function ImportModal({ onClose }: { onClose: () => void }) {
           {status && status.configured && !status.connected && (
             <div>
               <p className="text-[13px] text-dusk-muted">
-                Connect your GitHub account to browse and import your
-                repositories into Ren.
+                Connect your GitHub account and choose which repositories Ren can
+                access. You pick the repos during install — Ren only ever sees the
+                ones you select.
               </p>
               <a
                 href={connectUrl}
                 className="mt-4 flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-brass px-4 text-[13px] font-medium text-carbon transition-colors hover:bg-brass-deep"
               >
                 <Github className="size-4" />
-                Connect GitHub
+                Connect GitHub & choose repos
               </a>
             </div>
           )}
@@ -163,12 +164,22 @@ function ImportModal({ onClose }: { onClose: () => void }) {
                     @{status.login}
                   </span>
                 </div>
-                <a
-                  href={connectUrl}
-                  className="text-[11.5px] text-dusk-faint transition-colors hover:text-dusk"
-                >
-                  Switch account
-                </a>
+                <div className="flex items-center gap-3">
+                  <a
+                    href="https://github.com/settings/installations"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11.5px] text-dusk-faint transition-colors hover:text-dusk"
+                  >
+                    Manage repos
+                  </a>
+                  <a
+                    href={connectUrl}
+                    className="text-[11.5px] text-dusk-faint transition-colors hover:text-dusk"
+                  >
+                    Switch account
+                  </a>
+                </div>
               </div>
 
               {/* Search */}

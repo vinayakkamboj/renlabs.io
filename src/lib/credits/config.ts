@@ -25,9 +25,12 @@ export const CREDITS_PER_BUILD: Record<ModelTierId, number> = {
 };
 
 // ---------------------------------------------------------------------------
-// Free credits awarded on signup
+// Free tier — new users get one free generation (not free credits)
 // ---------------------------------------------------------------------------
-export const SIGNUP_BONUS_CREDITS = 100; // worth $1
+export const FREE_GENERATIONS = 1;
+
+/** Legacy: no credits are granted on signup anymore — the free tier is 1 build. */
+export const SIGNUP_BONUS_CREDITS = 0;
 
 // ---------------------------------------------------------------------------
 // Credit purchase packs

@@ -15,7 +15,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/server";
-import { CREDITS_PER_BUILD, SIGNUP_BONUS_CREDITS } from "./config";
+import { CREDITS_PER_BUILD, SIGNUP_BONUS_CREDITS, FREE_GENERATIONS } from "./config";
 import type { ModelTierId } from "@/lib/builder/model-tiers";
 
 export type CreditCheckResult =
@@ -29,25 +29,42 @@ export type DeductResult =
   | { ok: false; error: string }
   | { ok: true; skipped: true };
 
+export interface CreditsAccount {
+  balance: number;
+  freeGenerations: number;
+}
+
 /** Read-only credit balance for a user. Returns null if unavailable. */
 export async function getCreditsBalance(userId: string): Promise<number | null> {
+  const account = await getCreditsAccount(userId);
+  return account?.balance ?? null;
+}
+
+/** Balance + remaining free generations. Returns null if unavailable. */
+export async function getCreditsAccount(
+  userId: string,
+): Promise<CreditsAccount | null> {
   if (!isSupabaseConfigured()) return null;
   const supabase = await createClient();
   try {
     const { data } = await supabase
       .from("user_credits")
-      .select("balance")
+      .select("balance, free_generations")
       .eq("user_id", userId)
       .single();
-    return data?.balance ?? null;
+    if (!data) return null;
+    return {
+      balance: (data.balance as number) ?? 0,
+      freeGenerations: (data.free_generations as number) ?? 0,
+    };
   } catch {
     return null;
   }
 }
 
 /**
- * Ensure a credits row exists for the user. Creates one with the signup
- * bonus if it doesn't exist yet. Idempotent — safe to call on every request.
+ * Ensure a credits row exists for the user. New accounts start with 0 credits
+ * and one free generation. Idempotent — safe to call on every request.
  */
 export async function ensureCreditsAccount(userId: string): Promise<void> {
   if (!isSupabaseConfigured()) return;
@@ -57,6 +74,7 @@ export async function ensureCreditsAccount(userId: string): Promise<void> {
       {
         user_id: userId,
         balance: SIGNUP_BONUS_CREDITS,
+        free_generations: FREE_GENERATIONS,
         lifetime_purchased: 0,
         lifetime_used: 0,
       },

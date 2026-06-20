@@ -6,7 +6,7 @@ import { isSupabaseConfigured, createClient } from "@/lib/supabase/server";
 import { listApiKeys } from "@/lib/actions/api-keys";
 import { ApiKeysManager } from "@/components/platform/api-keys-manager";
 
-export const metadata: Metadata = { title: "API" };
+export const metadata: Metadata = { title: "API keys" };
 export const dynamic = "force-dynamic";
 
 const QUICKSTART = `curl https://api.ren.ai/v1/messages \\
@@ -41,8 +41,8 @@ export default async function ApiConsolePage() {
             API console
           </h1>
           <p className="mt-1.5 text-[13.5px] text-dusk-muted">
-            Create keys and call Astra from your own systems — one endpoint, your
-            API key, nothing else to install.
+            Call Astra from your own systems — one endpoint, your API key, nothing
+            else to install.
           </p>
         </div>
         <Link
