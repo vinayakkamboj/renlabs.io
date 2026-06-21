@@ -27,6 +27,10 @@ import {
   buildRepoImportPrompt,
 } from "@/lib/builder/prompts";
 import { detectRepoStack } from "@/lib/builder/repo-stack";
+import {
+  buildRepositoryIntelligence,
+  formatIntelligenceForPrompt,
+} from "@/lib/ai/repository-intelligence";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import { deductBuildCredits } from "@/lib/credits/server";
 import { CREDITS_PER_BUILD } from "@/lib/credits/config";
@@ -113,10 +117,20 @@ export async function POST(req: NextRequest) {
   });
 
   const isRepo = body.isRepository === true;
+
+  // For imported repositories, give Astra a deep, structured understanding of
+  // the codebase: detected stack + run commands, plus a full intelligence map
+  // (architecture scope, entrypoints, file breakdown, and risks).
+  const repoSystem = () => {
+    const stackPrompt = buildRepoImportPrompt(detectRepoStack(files));
+    const intel = buildRepositoryIntelligence(files.map((f) => f.path));
+    return `${stackPrompt}\n\n${formatIntelligenceForPrompt(intel)}`;
+  };
+
   const system = body.repairIssues
     ? buildRepairPrompt(body.repairIssues)
     : isRepo
-      ? buildRepoImportPrompt(detectRepoStack(files))
+      ? repoSystem()
       : body.isFirstBuild
         ? buildNewProjectPrompt()
         : buildEditPrompt();

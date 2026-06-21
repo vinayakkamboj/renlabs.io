@@ -1,0 +1,54 @@
+import { redirect } from "next/navigation";
+import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
+
+export interface AdminUser {
+  id: string;
+  email: string;
+}
+
+/** Emails granted admin access via the ADMIN_EMAILS env allowlist. */
+function adminEmails(): string[] {
+  return (process.env.ADMIN_EMAILS ?? "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/**
+ * Returns the current user if they are an admin, else null. A user is an admin
+ * if their email is in the ADMIN_EMAILS allowlist OR their profile role is
+ * 'admin'. Read-only — never mutates.
+ */
+export async function getAdminUser(): Promise<AdminUser | null> {
+  if (!isSupabaseConfigured()) return null;
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const email = (user.email ?? "").toLowerCase();
+  if (email && adminEmails().includes(email)) {
+    return { id: user.id, email };
+  }
+
+  // Fall back to a role flag on the user's own profile (readable under RLS).
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+  if (profile?.role === "admin") {
+    return { id: user.id, email };
+  }
+
+  return null;
+}
+
+/** Guard for admin routes — redirects non-admins away. */
+export async function requireAdmin(): Promise<AdminUser> {
+  const admin = await getAdminUser();
+  if (!admin) redirect("/dashboard");
+  return admin;
+}
