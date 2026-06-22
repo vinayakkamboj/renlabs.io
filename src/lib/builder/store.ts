@@ -50,7 +50,7 @@ interface WorkspaceState {
   setModelTier: (tier: ModelTierId) => void;
   updateFileContent: (path: string, content: string) => void;
   refreshViewer: () => void;
-  sendMessage: (text: string) => Promise<void>;
+  sendMessage: (text: string, images?: string[]) => Promise<void>;
 }
 
 const LS_PREFIX = "ren-workspace:";
@@ -139,14 +139,15 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   refreshViewer: () => set((s) => ({ viewerKey: s.viewerKey + 1 })),
 
-  sendMessage: async (text) => {
+  sendMessage: async (text, images) => {
     const trimmed = text.trim();
-    if (!trimmed || get().isBuilding) return;
+    if ((!trimmed && !images?.length) || get().isBuilding) return;
 
     const userMsg: BuildMessage = {
       id: newId(),
       role: "user",
       content: trimmed,
+      images: images?.length ? images : undefined,
       createdAt: new Date().toISOString(),
     };
     set((s) => ({
@@ -160,6 +161,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     const runBuild = async (repairIssues?: string): Promise<string> => {
       const { messages, projectFiles, modelTier, isFirstBuild, recentlyChanged, projectKind } =
         get();
+      const lastUser = [...messages].reverse().find((m) => m.role === "user");
       const res = await fetch("/api/builder", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -171,6 +173,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           recentlyChanged,
           repairIssues,
           isRepository: projectKind === "repository",
+          images: lastUser?.images ?? undefined,
         }),
       });
 
@@ -261,7 +264,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     } catch (e) {
       const reason =
         e instanceof Error && e.message === "builder_not_configured"
-          ? "The build agent isn't configured. Set OPENROUTER_API_KEY on the server."
+          ? "The build agent isn't configured. Set OPENROUTER_API_KEY (or ANTHROPIC_API_KEY) on the server."
           : "The build failed. Check your connection and try again.";
       const assistantMsg: BuildMessage = {
         id: newId(),

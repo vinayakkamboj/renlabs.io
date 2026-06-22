@@ -4,10 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import {
   ArrowUp,
   FileCode2,
+  ImagePlus,
   Layers,
   Loader2,
   Sparkles,
   Wand2,
+  X,
 } from "lucide-react";
 import { RenMark } from "@/components/ui/wordmark";
 import { useWorkspaceStore } from "@/lib/builder/store";
@@ -28,7 +30,9 @@ export function ChatPanel() {
   const streamingText = useWorkspaceStore((s) => s.streamingText);
   const sendMessage = useWorkspaceStore((s) => s.sendMessage);
   const [input, setInput] = useState("");
+  const [images, setImages] = useState<string[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -37,10 +41,34 @@ export function ChatPanel() {
     });
   }, [messages, streamingText]);
 
+  const MAX_IMAGES = 4;
+  const MAX_BYTES = 4 * 1024 * 1024; // 4MB per image
+
+  async function addFiles(files: FileList | null) {
+    if (!files?.length) return;
+    const room = MAX_IMAGES - images.length;
+    const picked = Array.from(files)
+      .filter((f) => f.type.startsWith("image/") && f.size <= MAX_BYTES)
+      .slice(0, Math.max(0, room));
+    const urls = await Promise.all(
+      picked.map(
+        (f) =>
+          new Promise<string>((resolve, reject) => {
+            const r = new FileReader();
+            r.onload = () => resolve(r.result as string);
+            r.onerror = reject;
+            r.readAsDataURL(f);
+          }),
+      ),
+    );
+    setImages((prev) => [...prev, ...urls].slice(0, MAX_IMAGES));
+  }
+
   function submit() {
-    if (!input.trim() || isBuilding) return;
-    sendMessage(input);
+    if ((!input.trim() && images.length === 0) || isBuilding) return;
+    sendMessage(input, images);
     setInput("");
+    setImages([]);
   }
 
   return (
@@ -89,9 +117,37 @@ export function ChatPanel() {
       <div className="shrink-0 border-t border-carbon-line p-3">
         <ModelIndicator />
         <div className="mt-2 overflow-hidden rounded-xl border border-carbon-line bg-carbon-raised focus-within:border-carbon-line-strong">
+          {images.length > 0 && (
+            <div className="flex flex-wrap gap-2 px-3 pt-3">
+              {images.map((src, i) => (
+                <div key={i} className="group relative size-14 overflow-hidden rounded-lg border border-carbon-line">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={src} alt="attachment" className="size-full object-cover" />
+                  <button
+                    onClick={() => setImages((p) => p.filter((_, j) => j !== i))}
+                    className="absolute right-0.5 top-0.5 flex size-4 items-center justify-center rounded-full bg-carbon/80 text-dusk opacity-0 transition-opacity group-hover:opacity-100"
+                    aria-label="Remove image"
+                  >
+                    <X className="size-2.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onPaste={(e) => {
+              const imgs = Array.from(e.clipboardData.files).filter((f) =>
+                f.type.startsWith("image/"),
+              );
+              if (imgs.length) {
+                e.preventDefault();
+                const dt = new DataTransfer();
+                imgs.forEach((f) => dt.items.add(f));
+                void addFiles(dt.files);
+              }
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
@@ -99,16 +155,35 @@ export function ChatPanel() {
               }
             }}
             rows={3}
-            placeholder="Describe a change — a page, a feature, a fix…"
+            placeholder="Describe a change — or attach a screenshot to build from…"
             className="platform-scroll w-full resize-none bg-transparent px-3 py-2.5 text-[13px] text-dusk outline-none placeholder:text-dusk-faint/70"
           />
           <div className="flex items-center justify-between px-3 pb-2.5 pt-0.5">
-            <div className="flex items-center gap-1.5 text-[10.5px] text-dusk-faint/70">
-              <span>⏎ send · ⇧⏎ newline</span>
+            <div className="flex items-center gap-2">
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                multiple
+                hidden
+                onChange={(e) => {
+                  void addFiles(e.target.files);
+                  e.target.value = "";
+                }}
+              />
+              <button
+                onClick={() => fileRef.current?.click()}
+                disabled={images.length >= MAX_IMAGES}
+                title="Attach image"
+                className="flex size-7 items-center justify-center rounded-lg text-dusk-faint transition-colors hover:bg-carbon-high hover:text-dusk disabled:opacity-30"
+              >
+                <ImagePlus className="size-4" />
+              </button>
+              <span className="text-[10.5px] text-dusk-faint/70">⏎ send · ⇧⏎ newline</span>
             </div>
             <button
               onClick={submit}
-              disabled={!input.trim() || isBuilding}
+              disabled={(!input.trim() && images.length === 0) || isBuilding}
               className="flex size-7 items-center justify-center rounded-lg bg-brass text-carbon transition-all hover:bg-brass-deep disabled:opacity-30"
             >
               {isBuilding ? (
@@ -127,10 +202,25 @@ export function ChatPanel() {
 function Message({ message }: { message: BuildMessage }) {
   if (message.role === "user") {
     return (
-      <div className="flex justify-end">
-        <div className="max-w-[88%] rounded-2xl rounded-br-sm bg-carbon-high px-3.5 py-2.5 text-[13px] leading-relaxed text-dusk">
-          {message.content}
-        </div>
+      <div className="flex flex-col items-end gap-1.5">
+        {message.images && message.images.length > 0 && (
+          <div className="flex max-w-[88%] flex-wrap justify-end gap-1.5">
+            {message.images.map((src, i) => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={i}
+                src={src}
+                alt="attachment"
+                className="size-20 rounded-lg border border-carbon-line object-cover"
+              />
+            ))}
+          </div>
+        )}
+        {message.content && (
+          <div className="max-w-[88%] rounded-2xl rounded-br-sm bg-carbon-high px-3.5 py-2.5 text-[13px] leading-relaxed text-dusk">
+            {message.content}
+          </div>
+        )}
       </div>
     );
   }

@@ -31,11 +31,7 @@ import {
   buildRepositoryIntelligence,
   formatIntelligenceForPrompt,
 } from "@/lib/ai/repository-intelligence";
-import {
-  isOpenRouterConfigured,
-  openRouterStream,
-  sseToText,
-} from "@/lib/ai/openrouter";
+import { isAstraConfigured, streamAstraText } from "@/lib/ai/astra";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import { deductBuildCredits } from "@/lib/credits/server";
 import { CREDITS_PER_BUILD } from "@/lib/credits/config";
@@ -52,12 +48,14 @@ interface BuildRequest {
   recentlyChanged?: string[];
   errorPaths?: string[];
   repairIssues?: string;
+  /** Image data URLs attached to the latest user message (vision-capable providers). */
+  images?: string[];
 }
 
 const MAX_OUTPUT_TOKENS = 16_000;
 
 export async function POST(req: NextRequest) {
-  if (!isOpenRouterConfigured()) {
+  if (!isAstraConfigured()) {
     return Response.json({ error: "builder_not_configured" }, { status: 503 });
   }
 
@@ -138,18 +136,20 @@ export async function POST(req: NextRequest) {
         ? buildNewProjectPrompt()
         : buildEditPrompt();
 
+  const images = Array.isArray(body.images) ? body.images.slice(0, 4) : [];
   const apiMessages = body.messages.map((m, idx) => {
     if (idx === body.messages.length - 1 && m.role === "user") {
       return {
         role: "user" as const,
         content: `${contextPack}\n\n---\n\n## Request\n${m.content}`,
+        images: images.length ? images : undefined,
       };
     }
     return { role: m.role, content: m.content };
   });
 
-  // ── 4. Stream from Astra (via OpenRouter) ─────────────────────────────────
-  const upstream = await openRouterStream(
+  // ── 4. Stream from Astra (OpenRouter, or Claude fallback) ─────────────────
+  const result = await streamAstraText(
     [
       { role: "system", content: system },
       ...apiMessages.slice(-16),
@@ -157,15 +157,14 @@ export async function POST(req: NextRequest) {
     { temperature: 0.4, maxTokens: MAX_OUTPUT_TOKENS },
   );
 
-  if (!upstream || !upstream.ok || !upstream.body) {
-    const detail = upstream ? await upstream.text().catch(() => "") : "";
+  if (!result.ok) {
     return Response.json(
-      { error: "upstream_error", detail: detail.slice(0, 500) },
-      { status: 502 },
+      { error: "upstream_error", detail: result.detail },
+      { status: result.status },
     );
   }
 
-  return new Response(sseToText(upstream.body), {
+  return new Response(result.stream, {
     headers: {
       "Content-Type": "text/plain; charset=utf-8",
       "Cache-Control": "no-store",

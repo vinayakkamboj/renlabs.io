@@ -12,6 +12,8 @@ const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 export interface ChatMsg {
   role: "system" | "user" | "assistant";
   content: string;
+  /** Optional image data URLs (data:image/…;base64,…) attached to this message. */
+  images?: string[];
 }
 
 export function isOpenRouterConfigured(): boolean {
@@ -21,6 +23,18 @@ export function isOpenRouterConfigured(): boolean {
 /** The Astra model slug on OpenRouter. */
 export function astraModelId(): string {
   return process.env.OPENROUTER_MODEL ?? "z-ai/glm-5.2";
+}
+
+/** Build an OpenAI-style message (multimodal when images are attached). */
+function toOpenAIMessage(m: ChatMsg) {
+  if (!m.images?.length) return { role: m.role, content: m.content };
+  return {
+    role: m.role,
+    content: [
+      { type: "text", text: m.content },
+      ...m.images.map((url) => ({ type: "image_url", image_url: { url } })),
+    ],
+  };
 }
 
 /**
@@ -51,7 +65,7 @@ export async function openRouterStream(
       stream: true,
       temperature: opts.temperature ?? 0.7,
       max_tokens: opts.maxTokens ?? 2048,
-      messages,
+      messages: messages.map(toOpenAIMessage),
     }),
   }).catch(() => null);
 }

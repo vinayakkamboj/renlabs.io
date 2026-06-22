@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { ShieldCheck } from "lucide-react";
 import { RenMark } from "@/components/ui/wordmark";
 import { UserMenu } from "@/components/auth/user-menu";
 import { cn } from "@/lib/utils";
@@ -13,7 +14,13 @@ const navLinks = [
   { href: "/dashboard/integrations", label: "Integrations" },
 ];
 
-export function PlatformShell({ children }: { children: React.ReactNode }) {
+export function PlatformShell({
+  children,
+  isAdmin = false,
+}: {
+  children: React.ReactNode;
+  isAdmin?: boolean;
+}) {
   const pathname = usePathname();
 
   return (
@@ -45,6 +52,15 @@ export function PlatformShell({ children }: { children: React.ReactNode }) {
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
+          {isAdmin && (
+            <Link
+              href="/admin"
+              className="flex items-center gap-1.5 rounded-lg border border-signal-red/30 bg-signal-red/[0.06] px-3 py-1.5 text-[12.5px] text-signal-red/90 transition-colors hover:bg-signal-red/10"
+            >
+              <ShieldCheck className="size-3.5" />
+              Admin
+            </Link>
+          )}
           <Link
             href="/console"
             className="hidden items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12.5px] text-dusk-muted transition-colors hover:bg-carbon-raised hover:text-dusk sm:flex"

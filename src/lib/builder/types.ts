@@ -34,6 +34,8 @@ export interface BuildMessage {
   content: string;
   /** Patch plan applied by this assistant turn, if any. */
   plan?: { summary: string; files: string[] } | null;
+  /** Image data URLs attached to a user message, if any. */
+  images?: string[];
   createdAt: string;
 }
 

@@ -12,11 +12,10 @@ export const dynamic = "force-dynamic";
 import { NextRequest } from "next/server";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import {
-  isOpenRouterConfigured,
-  openRouterStream,
-  sseToText,
+  isAstraConfigured,
+  streamAstraText,
   type ChatMsg,
-} from "@/lib/ai/openrouter";
+} from "@/lib/ai/astra";
 
 const DAILY_LIMIT = 40;
 
@@ -26,7 +25,7 @@ const SYSTEM_PROMPT =
   "explain your thinking concisely. State uncertainty honestly instead of guessing.";
 
 export async function POST(req: NextRequest) {
-  if (!isOpenRouterConfigured()) {
+  if (!isAstraConfigured()) {
     return Response.json({ error: "astra_not_configured" }, { status: 503 });
   }
 
@@ -77,16 +76,16 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const upstream = await openRouterStream(
+  const result = await streamAstraText(
     [{ role: "system", content: SYSTEM_PROMPT }, ...messages.slice(-20)],
     { temperature: 0.7, maxTokens: 2048 },
   );
 
-  if (!upstream || !upstream.ok || !upstream.body) {
+  if (!result.ok) {
     return Response.json({ error: "astra_unreachable" }, { status: 502 });
   }
 
-  return new Response(sseToText(upstream.body), {
+  return new Response(result.stream, {
     headers: {
       "Content-Type": "text/plain; charset=utf-8",
       "Cache-Control": "no-store",
