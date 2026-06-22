@@ -1,27 +1,33 @@
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
+import type { AdminRole } from "./roles";
+import { hasMinRole } from "./roles";
+
+export type { AdminRole };
 
 export interface AdminUser {
   id: string;
   email: string;
+  /** Role in the admin hierarchy (support → admin → superadmin). */
+  role: AdminRole;
+  /** Convenience shorthand: role === "superadmin". */
   isSuperAdmin: boolean;
 }
 
 /**
- * Built-in superadmin(s). Always have full admin access regardless of env
- * config or database role. Keep this list tiny. Both spellings of the founder's
- * email are included to be safe.
+ * Hardcoded founder accounts. Always superadmin regardless of DB state.
+ * Keep this list as small as possible.
  */
-const SUPERADMINS = [
+const SUPERADMIN_EMAILS = [
   "vinayakkamboj01@gmail.com",
   "vinayak@renlabs.io",
 ];
 
-function isSuperAdmin(email: string): boolean {
-  return SUPERADMINS.includes(email.toLowerCase());
+function isHardcodedSuperAdmin(email: string): boolean {
+  return SUPERADMIN_EMAILS.includes(email.toLowerCase());
 }
 
-/** Emails granted admin access via the ADMIN_EMAILS env allowlist. */
-function adminEmails(): string[] {
+/** Additional admins granted via the ADMIN_EMAILS env var (comma-separated). */
+function envAdminEmails(): string[] {
   return (process.env.ADMIN_EMAILS ?? "")
     .split(",")
     .map((e) => e.trim().toLowerCase())
@@ -29,9 +35,15 @@ function adminEmails(): string[] {
 }
 
 /**
- * Returns the current user if they are an admin, else null. A user is an admin
- * if they are a built-in superadmin, their email is in the ADMIN_EMAILS
- * allowlist, or their profile role is 'admin'. Read-only — never mutates.
+ * Returns the current session user as an AdminUser if they have any admin
+ * panel access, otherwise null.
+ *
+ * Priority order:
+ *   1. Hardcoded superadmins (SUPERADMIN_EMAILS)      → role: superadmin
+ *   2. ADMIN_EMAILS env allowlist                     → role: admin
+ *   3. profiles.role = "admin"                        → role: admin
+ *   4. profiles.role = "support"                      → role: support
+ *   5. Everything else (member, researcher, …)        → null (no panel access)
  */
 export async function getAdminUser(): Promise<AdminUser | null> {
   if (!isSupabaseConfigured()) return null;
@@ -44,40 +56,57 @@ export async function getAdminUser(): Promise<AdminUser | null> {
 
   const email = (user.email ?? "").toLowerCase();
 
-  if (email && isSuperAdmin(email)) {
-    return { id: user.id, email, isSuperAdmin: true };
+  if (isHardcodedSuperAdmin(email)) {
+    return { id: user.id, email, role: "superadmin", isSuperAdmin: true };
   }
 
-  if (email && adminEmails().includes(email)) {
-    return { id: user.id, email, isSuperAdmin: false };
+  if (envAdminEmails().includes(email)) {
+    return { id: user.id, email, role: "admin", isSuperAdmin: false };
   }
 
-  // Fall back to a role flag on the user's own profile (readable under RLS).
   const { data: profile } = await supabase
     .from("profiles")
     .select("role")
     .eq("id", user.id)
     .single();
-  if (profile?.role === "admin") {
-    return { id: user.id, email, isSuperAdmin: false };
+
+  const dbRole = (profile?.role ?? "") as string;
+
+  if (dbRole === "admin") {
+    return { id: user.id, email, role: "admin", isSuperAdmin: false };
+  }
+  if (dbRole === "support") {
+    return { id: user.id, email, role: "support", isSuperAdmin: false };
   }
 
   return null;
 }
 
-/**
- * Guard for admin server actions — throws if the caller is not an admin. Always
- * call this at the top of any admin mutation before touching the service-role
- * client. (Pages use getAdminUser() and render an access-denied state instead,
- * to avoid redirect loops on the admin subdomain.)
- */
+// ── Guards ────────────────────────────────────────────────────────────────────
+// Call these at the top of every server action / route that touches admin data.
+
+/** Throws if the caller has no admin panel access at all. */
 export async function requireAdmin(): Promise<AdminUser> {
   const admin = await getAdminUser();
   if (!admin) throw new Error("not_authorized");
   return admin;
 }
 
-/** Throws unless the caller is a built-in superadmin. */
+/** Throws if the caller cannot grant or deduct credits (support+). */
+export async function requireCreditsAccess(): Promise<AdminUser> {
+  const admin = await requireAdmin();
+  if (!hasMinRole(admin.role, "support")) throw new Error("not_authorized");
+  return admin;
+}
+
+/** Throws if the caller doesn't have full admin panel access (admin+). */
+export async function requireFullAdmin(): Promise<AdminUser> {
+  const admin = await requireAdmin();
+  if (!hasMinRole(admin.role, "admin")) throw new Error("not_authorized");
+  return admin;
+}
+
+/** Throws if the caller is not a hardcoded superadmin. */
 export async function requireSuperAdmin(): Promise<AdminUser> {
   const admin = await requireAdmin();
   if (!admin.isSuperAdmin) throw new Error("not_authorized");

@@ -20,14 +20,17 @@ export default async function AdminLayout({
 
   if (admin) {
     return (
-      <AdminShell adminEmail={admin.email} isSuperAdmin={admin.isSuperAdmin}>
+      <AdminShell
+        adminEmail={admin.email}
+        adminRole={admin.role}
+        isSuperAdmin={admin.isSuperAdmin}
+      >
         {children}
       </AdminShell>
     );
   }
 
-  // Not an admin. Distinguish "not signed in" (show the dedicated admin login)
-  // from "signed in but not an admin" (show a clear denial).
+  // Not an admin. Check whether they're signed in at all.
   let authed = false;
   if (isSupabaseConfigured()) {
     const supabase = await createClient();
@@ -41,7 +44,7 @@ export default async function AdminLayout({
     return <AdminLogin />;
   }
 
-  // Authenticated, but not an admin.
+  // Signed in but not an admin.
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-carbon px-6 text-center text-dusk">
       <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-signal-red">
@@ -52,7 +55,7 @@ export default async function AdminLayout({
       </h1>
       <p className="mt-2 max-w-[42ch] text-[13.5px] text-dusk-muted">
         Your account doesn&apos;t have admin access. If you believe this is a
-        mistake, contact the platform owner.
+        mistake, contact a superadmin to have your role updated.
       </p>
       <Link
         href="/dashboard"

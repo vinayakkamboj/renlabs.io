@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { getAdminUser } from "@/lib/auth/admin";
+import { canGrantCredits } from "@/lib/auth/roles";
 import { isAdminDbConfigured, createAdminClient } from "@/lib/supabase/admin";
 import { AdminConfigNotice } from "@/components/platform/admin-config-notice";
 import { AdminUserManager } from "@/components/platform/admin-user-manager";
@@ -95,7 +96,8 @@ export default async function AdminUserDetailPage({ params }: PageProps) {
         userId={id}
         balance={c.balance}
         freeGenerations={c.free_generations}
-        role={profile.role ?? "member"}
+        userRole={profile.role ?? "member"}
+        canGrant={canGrantCredits(admin.role)}
         isSuperAdmin={admin.isSuperAdmin}
       />
 

@@ -34,7 +34,12 @@ WITH checks(ord, migration, proves, applied) AS (
         EXISTS (SELECT 1 FROM pg_proc WHERE proname='admin_grant_credits')
         AND to_regclass('public.admin_audit_log') IS NOT NULL),
     (8, '20260620_chat.sql',          'table chat_usage',
-        to_regclass('public.chat_usage')         IS NOT NULL)
+        to_regclass('public.chat_usage')         IS NOT NULL),
+    (9, '20260622_roles.sql',         'profiles.role allows support',
+        EXISTS (SELECT 1 FROM information_schema.check_constraints
+                WHERE constraint_schema = 'public'
+                  AND constraint_name   = 'profiles_role_check'
+                  AND check_clause LIKE '%support%'))
 )
 SELECT
   migration,

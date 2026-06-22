@@ -1,8 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireAdmin, requireSuperAdmin } from "@/lib/auth/admin";
+import {
+  requireCreditsAccess,
+  requireSuperAdmin,
+} from "@/lib/auth/admin";
 import { createAdminClient, isAdminDbConfigured } from "@/lib/supabase/admin";
+import type { AssignableRole } from "@/lib/auth/roles";
+import { ASSIGNABLE_ROLES } from "@/lib/auth/roles";
 
 type Result = { ok: true } | { ok: false; error: string };
 
@@ -29,8 +34,8 @@ async function audit(
 }
 
 /**
- * Grant (or deduct, with a negative amount) credits to a user. Use this to
- * manually fulfill a plan when an online payment fails.
+ * Grant (positive) or deduct (negative) credits for a user.
+ * Requires: support role or higher.
  */
 export async function adminGrantCredits(
   targetUserId: string,
@@ -39,7 +44,7 @@ export async function adminGrantCredits(
 ): Promise<Result> {
   let admin;
   try {
-    admin = await requireAdmin();
+    admin = await requireCreditsAccess();
   } catch {
     return { ok: false, error: "Not authorized." };
   }
@@ -62,23 +67,23 @@ export async function adminGrantCredits(
   });
   if (error) return { ok: false, error: error.message };
 
-  await audit(admin.id, admin.email, "grant_credits", targetUserId, {
-    amount,
-    note,
-  });
+  await audit(admin.id, admin.email, "grant_credits", targetUserId, { amount, note });
   revalidatePath(`/admin/users/${targetUserId}`);
   revalidatePath("/admin");
   return { ok: true };
 }
 
-/** Set a user's remaining free generations (e.g. comp a few extra builds). */
+/**
+ * Set a user's remaining free build generations.
+ * Requires: support role or higher.
+ */
 export async function adminSetFreeGenerations(
   targetUserId: string,
   count: number,
 ): Promise<Result> {
   let admin;
   try {
-    admin = await requireAdmin();
+    admin = await requireCreditsAccess();
   } catch {
     return { ok: false, error: "Not authorized." };
   }
@@ -96,17 +101,18 @@ export async function adminSetFreeGenerations(
   });
   if (error) return { ok: false, error: error.message };
 
-  await audit(admin.id, admin.email, "set_free_generations", targetUserId, {
-    count,
-  });
+  await audit(admin.id, admin.email, "set_free_generations", targetUserId, { count });
   revalidatePath(`/admin/users/${targetUserId}`);
   return { ok: true };
 }
 
-/** Change a user's role. Superadmin only. */
+/**
+ * Change a user's role.
+ * Requires: superadmin only — no one else can promote or demote users.
+ */
 export async function adminSetRole(
   targetUserId: string,
-  role: "member" | "researcher" | "admin",
+  role: AssignableRole,
 ): Promise<Result> {
   let admin;
   try {
@@ -117,15 +123,12 @@ export async function adminSetRole(
   if (!isAdminDbConfigured()) {
     return { ok: false, error: "Service role key not configured on the server." };
   }
-  if (!["member", "researcher", "admin"].includes(role)) {
+  if (!ASSIGNABLE_ROLES.includes(role)) {
     return { ok: false, error: "Invalid role." };
   }
 
   const db = createAdminClient();
-  const { error } = await db
-    .from("profiles")
-    .update({ role })
-    .eq("id", targetUserId);
+  const { error } = await db.from("profiles").update({ role }).eq("id", targetUserId);
   if (error) return { ok: false, error: error.message };
 
   await audit(admin.id, admin.email, "set_role", targetUserId, { role });
