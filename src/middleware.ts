@@ -9,7 +9,10 @@ import { NextResponse, type NextRequest } from "next/server";
  * and everything stays publicly reachable (demo mode).
  */
 export async function middleware(request: NextRequest) {
-  const host = (request.headers.get("host") ?? "").split(":")[0].toLowerCase();
+  const host = (request.headers.get("host") ?? "")
+    .split(":")[0]
+    .toLowerCase()
+    .replace(/^www\./, ""); // tolerate www.admin.renlabs.io → admin.renlabs.io
   const nextUrl = request.nextUrl;
 
   // Host-based routing: admin.renlabs.io (or any admin.* host) serves the
