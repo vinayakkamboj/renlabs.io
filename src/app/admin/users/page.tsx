@@ -1,3 +1,5 @@
+import Link from "next/link";
+import { getAdminUser } from "@/lib/auth/admin";
 import { isAdminDbConfigured, createAdminClient } from "@/lib/supabase/admin";
 import { AdminConfigNotice } from "@/components/platform/admin-config-notice";
 
@@ -18,6 +20,7 @@ interface CreditInfo {
 }
 
 export default async function AdminUsersPage() {
+  if (!(await getAdminUser())) return null;
   if (!isAdminDbConfigured()) return <AdminConfigNotice />;
 
   const db = createAdminClient();
@@ -61,7 +64,14 @@ export default async function AdminUsersPage() {
               const c = creditMap.get(p.id);
               return (
                 <tr key={p.id} className="bg-carbon-raised hover:bg-carbon-high/40">
-                  <td className="px-4 py-3 text-dusk">{p.email ?? "—"}</td>
+                  <td className="px-4 py-3">
+                    <Link
+                      href={`/admin/users/${p.id}`}
+                      className="text-dusk underline-offset-2 hover:text-brass hover:underline"
+                    >
+                      {p.email ?? "—"}
+                    </Link>
+                  </td>
                   <td className="px-4 py-3">
                     <span
                       className={

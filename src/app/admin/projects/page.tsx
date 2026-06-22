@@ -1,3 +1,4 @@
+import { getAdminUser } from "@/lib/auth/admin";
 import { isAdminDbConfigured, createAdminClient } from "@/lib/supabase/admin";
 import { AdminConfigNotice } from "@/components/platform/admin-config-notice";
 
@@ -14,6 +15,7 @@ interface ProjectRow {
 }
 
 export default async function AdminProjectsPage() {
+  if (!(await getAdminUser())) return null;
   if (!isAdminDbConfigured()) return <AdminConfigNotice />;
 
   const db = createAdminClient();

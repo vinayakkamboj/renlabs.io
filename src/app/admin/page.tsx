@@ -8,6 +8,7 @@ import {
   DollarSign,
 } from "lucide-react";
 import { isAdminDbConfigured, createAdminClient } from "@/lib/supabase/admin";
+import { getAdminUser } from "@/lib/auth/admin";
 
 export const dynamic = "force-dynamic";
 
@@ -60,6 +61,7 @@ async function getStats() {
 }
 
 export default async function AdminOverviewPage() {
+  if (!(await getAdminUser())) return null;
   if (!isAdminDbConfigured()) {
     return <ServiceRoleNotice />;
   }

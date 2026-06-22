@@ -10,7 +10,8 @@ const navLinks = [
   { href: "/admin", label: "Overview", exact: true },
   { href: "/admin/users", label: "Users" },
   { href: "/admin/projects", label: "Projects" },
-  { href: "/admin/usage", label: "Usage & revenue" },
+  { href: "/admin/payments", label: "Payments" },
+  { href: "/admin/audit", label: "Audit" },
 ];
 
 export function AdminShell({

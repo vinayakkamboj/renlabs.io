@@ -1,4 +1,3 @@
-import { redirect } from "next/navigation";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 
 export interface AdminUser {
@@ -9,9 +8,14 @@ export interface AdminUser {
 
 /**
  * Built-in superadmin(s). Always have full admin access regardless of env
- * config or database role. Keep this list tiny.
+ * config or database role. Keep this list tiny. Both spellings of the founder's
+ * email are included to be safe.
  */
-const SUPERADMINS = ["vinayakkamoj01@gmail.com"];
+const SUPERADMINS = [
+  "vinayakkamoj01@gmail.com",
+  "vinayakkamboj01@gmail.com",
+  "getsubit@gmail.com",
+];
 
 function isSuperAdmin(email: string): boolean {
   return SUPERADMINS.includes(email.toLowerCase());
@@ -62,9 +66,21 @@ export async function getAdminUser(): Promise<AdminUser | null> {
   return null;
 }
 
-/** Guard for admin routes — redirects non-admins away. */
+/**
+ * Guard for admin server actions — throws if the caller is not an admin. Always
+ * call this at the top of any admin mutation before touching the service-role
+ * client. (Pages use getAdminUser() and render an access-denied state instead,
+ * to avoid redirect loops on the admin subdomain.)
+ */
 export async function requireAdmin(): Promise<AdminUser> {
   const admin = await getAdminUser();
-  if (!admin) redirect("/dashboard");
+  if (!admin) throw new Error("not_authorized");
+  return admin;
+}
+
+/** Throws unless the caller is a built-in superadmin. */
+export async function requireSuperAdmin(): Promise<AdminUser> {
+  const admin = await requireAdmin();
+  if (!admin.isSuperAdmin) throw new Error("not_authorized");
   return admin;
 }

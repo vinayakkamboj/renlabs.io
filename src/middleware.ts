@@ -15,15 +15,22 @@ export async function middleware(request: NextRequest) {
     .replace(/^www\./, ""); // tolerate www.admin.renlabs.io → admin.renlabs.io
   const nextUrl = request.nextUrl;
 
-  // Host-based routing: admin.renlabs.io (or any admin.* host) serves the
-  // /admin tree. Links inside the panel already use /admin/* paths, so this
-  // mainly maps the subdomain root and bare paths onto the admin routes.
+  // Host-based routing for the admin subdomain (admin.renlabs.io).
+  //  - bare host        → admin overview
+  //  - Ren Code app paths → bounce into the admin area (avoid a broken/mixed UI)
+  //  - /admin/*, /login, /auth pass through untouched
   if (host.startsWith("admin.")) {
-    if (!nextUrl.pathname.startsWith("/admin")) {
-      const rewritten = nextUrl.clone();
-      rewritten.pathname =
-        nextUrl.pathname === "/" ? "/admin" : `/admin${nextUrl.pathname}`;
-      return NextResponse.rewrite(rewritten);
+    const p = nextUrl.pathname;
+    if (p === "/") {
+      return NextResponse.rewrite(new URL("/admin", request.url));
+    }
+    if (
+      p === "/dashboard" ||
+      p.startsWith("/dashboard/") ||
+      p === "/console" ||
+      p.startsWith("/console/")
+    ) {
+      return NextResponse.redirect(new URL("/admin", request.url));
     }
   }
 
@@ -74,7 +81,7 @@ export async function middleware(request: NextRequest) {
 
   if (user && path === "/login") {
     const redirect = nextUrl.clone();
-    redirect.pathname = "/dashboard";
+    redirect.pathname = host.startsWith("admin.") ? "/admin" : "/dashboard";
     redirect.search = "";
     return NextResponse.redirect(redirect);
   }
