@@ -45,7 +45,7 @@ export function AdminLogin() {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${location.origin}/auth/callback?next=/admin`,
+        redirectTo: `${location.origin}/auth/callback?next=${encodeURIComponent("/admin")}`,
         queryParams: { prompt: "select_account", access_type: "offline" },
       },
     });

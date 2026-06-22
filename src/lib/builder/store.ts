@@ -314,13 +314,17 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         };
       }
 
-      if (!plan.changes.length) {
+      const editPaths = (plan.edits ?? []).map((e) => e.path);
+      if (!plan.changes.length && !editPaths.length) {
         // The whole response was unusable (everything truncated).
         throw new Error("truncated_empty");
       }
 
       const nextFiles = applyPatchPlan(get().projectFiles, plan);
-      const changedPaths = plan.changes.map((c) => c.path);
+      // Track both full-file writes and surgical edits as "changed".
+      const changedPaths = Array.from(
+        new Set([...plan.changes.map((c) => c.path), ...editPaths]),
+      );
 
       const note = droppedFiles.length
         ? `\n\n_Note: ${droppedFiles.length} file(s) came back incomplete and were skipped to keep the preview working — ask me to finish ${droppedFiles.join(", ")}._`

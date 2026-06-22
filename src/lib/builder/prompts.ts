@@ -28,11 +28,20 @@ Your response MUST contain exactly one \`<file_patches>\` block and nothing else
     { "path": "src/App.tsx", "content": "FULL FILE CONTENT" },
     { "path": "src/pages/Dashboard.tsx", "content": "FULL FILE CONTENT" }
   ],
+  "edits": [
+    { "path": "src/components/Header.tsx", "find": "EXACT existing snippet", "replace": "new snippet" }
+  ],
   "deletes": ["src/old.tsx"],
   "renames": [{ "from": "src/A.tsx", "to": "src/B.tsx" }]
 }
 </file_patches>
 \`\`\`
+
+### \`changes\` vs \`edits\` — choose the cheaper tool (IMPORTANT)
+- Use **\`edits\`** (surgical find/replace) for small, localized changes to an EXISTING file — adding a prop, changing a className, inserting a section. This is the default for edits and saves tokens: you only write what changes, not the whole file.
+- Use **\`changes\`** (full file) only for NEW files, or when more than ~40% of an existing file changes.
+- An \`edit\`'s \`find\` MUST be an EXACT, VERBATIM substring copied from the current file (the files are provided to you), including whitespace, and it must be UNIQUE in that file — include 2–4 surrounding lines so there's exactly one match. If you're unsure it's unique, rewrite the whole file via \`changes\` instead.
+- Never target the same path with both a \`change\` and an \`edit\` in one response.
 
 ### Rules
 1. Each entry in \`changes\` is the COMPLETE file content, not a diff. Always write the whole file.

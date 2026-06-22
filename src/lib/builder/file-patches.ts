@@ -18,7 +18,7 @@
  * `applyPatchPlan` — the whole candidate is checked before any file is written.
  */
 
-import type { FilePatch, FilePatchPlan, FatalIssue, ProjectFile } from "./types";
+import type { FilePatch, FileEdit, FilePatchPlan, FatalIssue, ProjectFile } from "./types";
 import { PROTECTED_PATHS } from "./base-template";
 
 // ─── Parsing ───────────────────────────────────────────────────────────────
@@ -32,9 +32,10 @@ export function parseFilePatchPlan(content: string): FilePatchPlan | null {
   const raw = match[1].trim();
 
   // Strategy 1 — direct parse (happy path: the block is complete and valid).
+  // Accept any plan that carries work — full-file changes OR surgical edits.
   try {
     const result = JSON.parse(raw) as FilePatchPlan;
-    if (result?.changes?.length) return normalize(result);
+    if (result?.changes?.length || result?.edits?.length) return normalize(result);
   } catch {
     /* fall through to recovery */
   }
@@ -86,6 +87,16 @@ function normalize(plan: FilePatchPlan): FilePatchPlan {
       (c): c is FilePatch =>
         !!c && typeof c.path === "string" && typeof c.content === "string",
     ),
+    edits: Array.isArray(plan.edits)
+      ? plan.edits.filter(
+          (e): e is FileEdit =>
+            !!e &&
+            typeof e.path === "string" &&
+            typeof e.find === "string" &&
+            typeof e.replace === "string" &&
+            e.find.length > 0,
+        )
+      : undefined,
     deletes: Array.isArray(plan.deletes)
       ? plan.deletes.filter((d) => typeof d === "string")
       : undefined,
@@ -95,6 +106,20 @@ function normalize(plan: FilePatchPlan): FilePatchPlan {
         )
       : undefined,
   };
+}
+
+/** Count non-overlapping occurrences of `needle` in `haystack`. */
+function countOccurrences(haystack: string, needle: string): number {
+  if (!needle) return 0;
+  let count = 0;
+  let from = 0;
+  for (;;) {
+    const idx = haystack.indexOf(needle, from);
+    if (idx === -1) break;
+    count++;
+    from = idx + needle.length;
+  }
+  return count;
 }
 
 function extractTaggedFiles(raw: string): FilePatch[] {
@@ -283,7 +308,8 @@ export function detectFatalIssues(
 ): FatalIssue[] {
   const issues: FatalIssue[] = [];
 
-  if (!plan.changes.length) {
+  const edits = plan.edits ?? [];
+  if (!plan.changes.length && !edits.length) {
     issues.push({ type: "no-changes", detail: "No file changes were produced." });
     return issues;
   }
@@ -327,9 +353,43 @@ export function detectFatalIssues(
     }
   }
 
+  // Edit validation. Each edit's `find` must resolve against the file's current
+  // content (a same-turn full change wins over the existing file) and must match
+  // EXACTLY ONCE. A miss or an ambiguous match would corrupt the file, so we
+  // reject the candidate and let the build loop repair it.
+  const changeByPath = new Map(plan.changes.map((c) => [c.path, c.content]));
+  const existingByPath = new Map(existing.map((f) => [f.path, f.content]));
+  for (const edit of edits) {
+    if (!isSafePath(edit.path)) {
+      issues.push({ type: "invalid-path", detail: `Unsafe edit path: ${edit.path}` });
+      continue;
+    }
+    const current = changeByPath.get(edit.path) ?? existingByPath.get(edit.path);
+    if (current === undefined) {
+      issues.push({
+        type: "edit-failed",
+        detail: `Edit targets "${edit.path}", which doesn't exist. Create it via "changes" instead.`,
+      });
+      continue;
+    }
+    const matches = countOccurrences(current, edit.find);
+    if (matches === 0) {
+      issues.push({
+        type: "edit-failed",
+        detail: `Edit for "${edit.path}" — its "find" text wasn't found verbatim. Copy the exact current text, or rewrite the file via "changes".`,
+      });
+    } else if (matches > 1) {
+      issues.push({
+        type: "edit-failed",
+        detail: `Edit for "${edit.path}" — its "find" text matches ${matches} places; make it unique with more surrounding lines.`,
+      });
+    }
+  }
+
   // Relative imports must resolve to a file that will exist after applying.
   const resultPaths = new Set(existing.map((f) => f.path));
   for (const c of plan.changes) resultPaths.add(c.path);
+  for (const e of edits) resultPaths.add(e.path);
   for (const d of plan.deletes ?? []) resultPaths.delete(d);
 
   for (const change of plan.changes) {
@@ -412,6 +472,19 @@ export function applyPatchPlan(
     if (PROTECTED_PATHS.includes(change.path)) continue;
     if (!isSafePath(change.path)) continue;
     map.set(change.path, change.content);
+  }
+
+  // Surgical edits run after full-file changes so they can target same-turn
+  // content. Each edit is applied only if its `find` matches EXACTLY ONCE — a
+  // miss or ambiguous match is skipped rather than risk corrupting the file
+  // (validation already flags these, so a clean candidate applies fully here).
+  for (const edit of plan.edits ?? []) {
+    if (PROTECTED_PATHS.includes(edit.path)) continue;
+    if (!isSafePath(edit.path)) continue;
+    const current = map.get(edit.path);
+    if (current === undefined) continue;
+    if (countOccurrences(current, edit.find) !== 1) continue;
+    map.set(edit.path, current.replace(edit.find, edit.replace));
   }
 
   for (const del of plan.deletes ?? []) {

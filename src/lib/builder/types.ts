@@ -18,10 +18,23 @@ export interface FilePatch {
   content: string;
 }
 
+/**
+ * A surgical edit to an EXISTING file — an exact find/replace, like Claude's
+ * Edit tool. `find` must occur exactly once in the target file. Edits keep the
+ * rest of the file untouched, so the model only spends tokens on what changes.
+ */
+export interface FileEdit {
+  path: string;
+  find: string;
+  replace: string;
+}
+
 /** The structured plan the agent emits inside a <file_patches> block. */
 export interface FilePatchPlan {
   plan: string;
   changes: FilePatch[];
+  /** Surgical find/replace edits to existing files (token-efficient). */
+  edits?: FileEdit[];
   deletes?: string[];
   renames?: { from: string; to: string }[];
 }
@@ -46,7 +59,8 @@ export interface FatalIssue {
     | "truncated"
     | "missing-file"
     | "no-changes"
-    | "invalid-path";
+    | "invalid-path"
+    | "edit-failed";
   detail: string;
 }
 

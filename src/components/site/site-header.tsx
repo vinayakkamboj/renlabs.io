@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 
 const nav = [
   { href: "/code", label: "Products" },
+  { href: "/pricing", label: "Pricing" },
   { href: "/research", label: "Research" },
   { href: "/docs", label: "Documentation" },
   { href: "/api", label: "API" },
@@ -139,7 +140,12 @@ export function SiteHeader() {
       )}
     >
       <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-6 md:px-10">
-        <Link href="/" aria-label="Ren Labs home" className="text-ink transition-opacity hover:opacity-70">
+        <Link
+          href="/"
+          aria-label="Ren Labs — back to home"
+          title="Back to home"
+          className="text-ink transition-opacity hover:opacity-70"
+        >
           <Wordmark />
         </Link>
 
