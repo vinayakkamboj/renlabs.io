@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { PlatformShell } from "@/components/platform/shell";
-import { getAdminUser } from "@/lib/auth/admin";
 
 export const metadata: Metadata = {
   title: {
@@ -13,10 +12,10 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
-export default async function DashboardLayout({
+export default function DashboardLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  // Admins get an "Admin" entry in the nav that links to the separate panel.
-  const admin = await getAdminUser();
-  return <PlatformShell isAdmin={!!admin}>{children}</PlatformShell>;
+  // The admin console is a separate product at /admin with its own login and
+  // chrome — it is intentionally NOT surfaced inside the customer dashboard.
+  return <PlatformShell>{children}</PlatformShell>;
 }

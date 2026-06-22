@@ -93,6 +93,43 @@ function newId(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
+/**
+ * Turn a thrown build error into a clear, actionable chat message. We carry the
+ * upstream HTTP status (and any provider detail) through as `upstream:<status>:<detail>`
+ * so the user sees *why* a build failed — a bad key, a wrong model, or a rate
+ * limit — instead of a generic "check your connection".
+ */
+function describeBuildError(e: unknown): string {
+  const msg = e instanceof Error ? e.message : "";
+
+  if (msg === "builder_not_configured") {
+    return "The build agent isn't configured. Set OPENROUTER_API_KEY (or ANTHROPIC_API_KEY) on the server, then try again.";
+  }
+  if (msg === "insufficient_credits") {
+    return "You're out of build credits. Top up in Billing to keep building.";
+  }
+  if (msg === "auth_required") {
+    return "Your session expired. Sign in again to keep building.";
+  }
+  if (msg.startsWith("upstream:")) {
+    const [, statusStr, ...rest] = msg.split(":");
+    const status = Number(statusStr);
+    const detail = rest.join(":").trim();
+    const hint =
+      status === 401 || status === 403
+        ? "The Astra API key was rejected — check the key on the server."
+        : status === 404
+          ? "The configured Astra model wasn't found — check OPENROUTER_MODEL / ANTHROPIC_MODEL."
+          : status === 429
+            ? "Astra is rate-limited right now. Wait a moment and try again."
+            : status >= 500
+              ? "Astra's provider had a temporary error. Try again in a moment."
+              : "The build couldn't be completed.";
+    return detail ? `${hint} (${status}: ${detail})` : `${hint} (error ${status})`;
+  }
+  return "The build failed — couldn't reach the build agent. Check your connection and try again.";
+}
+
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   projectId: "",
   projectKind: "new",
@@ -177,8 +214,27 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         }),
       });
 
-      if (res.status === 503) throw new Error("builder_not_configured");
-      if (!res.ok || !res.body) throw new Error("build_failed");
+      if (!res.ok || !res.body) {
+        // Surface the real reason instead of a generic failure. The route
+        // returns a small JSON body ({ error, detail }) on every error path.
+        let info: { error?: string; detail?: string } = {};
+        try {
+          info = (await res.json()) as { error?: string; detail?: string };
+        } catch {
+          /* non-JSON body — fall through to status-only reason */
+        }
+        if (res.status === 503 || info.error === "builder_not_configured") {
+          throw new Error("builder_not_configured");
+        }
+        if (res.status === 402 || info.error === "insufficient_credits") {
+          throw new Error("insufficient_credits");
+        }
+        if (info.error === "auth_required") {
+          throw new Error("auth_required");
+        }
+        const detail = (info.detail || info.error || "").toString().slice(0, 240);
+        throw new Error(`upstream:${res.status}:${detail}`);
+      }
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -262,10 +318,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       }));
       persist(get().projectId, nextFiles, get().messages);
     } catch (e) {
-      const reason =
-        e instanceof Error && e.message === "builder_not_configured"
-          ? "The build agent isn't configured. Set OPENROUTER_API_KEY (or ANTHROPIC_API_KEY) on the server."
-          : "The build failed. Check your connection and try again.";
+      const reason = describeBuildError(e);
       const assistantMsg: BuildMessage = {
         id: newId(),
         role: "assistant",
