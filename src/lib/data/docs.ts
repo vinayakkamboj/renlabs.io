@@ -13,32 +13,12 @@ export const docsNav: DocGroup[] = [
       {
         title: "Getting Started",
         href: "/docs",
-        summary: "What Ren Code is, and how to go from a repository to a reviewable pull request.",
+        summary: "What Ren Code is, and how to go from a prompt to a running application.",
       },
       {
         title: "Authentication",
         href: "/docs/authentication",
         summary: "Sign in with email or Google, and how sessions and protected workspaces work.",
-      },
-    ],
-  },
-  {
-    group: "Workflows",
-    items: [
-      {
-        title: "GitHub Integration",
-        href: "/docs/github-integration",
-        summary: "Connect repositories through GitHub, with explicit, revocable, per-repo access.",
-      },
-      {
-        title: "Repository Analysis",
-        href: "/docs/repository-analysis",
-        summary: "How Astra reads a codebase — architecture, dependencies, and conventions.",
-      },
-      {
-        title: "Pull Requests",
-        href: "/docs/pull-requests",
-        summary: "Describe a change, review a real pull request, and stay in control of what merges.",
       },
     ],
   },

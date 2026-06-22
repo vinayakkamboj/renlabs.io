@@ -15,6 +15,7 @@ import {
   ASTRA_VERSION,
   OPUS_LABEL,
   OPENAI_LABEL,
+  GEMINI_LABEL,
 } from "@/lib/data/benchmarks";
 
 const data = BENCHMARKS.map((b) => ({
@@ -22,12 +23,14 @@ const data = BENCHMARKS.map((b) => ({
   [ASTRA_VERSION]: b.astra,
   [OPUS_LABEL]: b.opus,
   [OPENAI_LABEL]: b.openai,
+  [GEMINI_LABEL]: b.gemini,
 }));
 
 const COLORS = {
-  astra: "#8a6f45", // bronze — Astra
-  opus: "#413f39", // ink-soft
+  astra:  "#8a6f45", // bronze — Astra
+  opus:   "#413f39", // ink-soft
   openai: "#b3a892", // stone
+  gemini: "#6b8a9a", // slate-blue
 };
 
 export function BenchmarkChart() {
@@ -62,9 +65,10 @@ export function BenchmarkChart() {
             formatter={(value) => `${value}%`}
           />
           <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
-          <Bar dataKey={ASTRA_VERSION} fill={COLORS.astra} radius={[3, 3, 0, 0]} />
-          <Bar dataKey={OPUS_LABEL} fill={COLORS.opus} radius={[3, 3, 0, 0]} />
-          <Bar dataKey={OPENAI_LABEL} fill={COLORS.openai} radius={[3, 3, 0, 0]} />
+          <Bar dataKey={ASTRA_VERSION} fill={COLORS.astra}  radius={[3, 3, 0, 0]} />
+          <Bar dataKey={OPUS_LABEL}    fill={COLORS.opus}   radius={[3, 3, 0, 0]} />
+          <Bar dataKey={OPENAI_LABEL}  fill={COLORS.openai} radius={[3, 3, 0, 0]} />
+          <Bar dataKey={GEMINI_LABEL}  fill={COLORS.gemini} radius={[3, 3, 0, 0]} />
         </BarChart>
       </ResponsiveContainer>
     </div>

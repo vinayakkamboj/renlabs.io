@@ -8,6 +8,21 @@ import { ArrowUpRight } from "lucide-react";
 
 const ease = [0.25, 1, 0.5, 1] as const;
 
+const pillars = [
+  {
+    label: "Code generation",
+    detail: "From prompt to production-ready codebase — scaffolded correctly the first time.",
+  },
+  {
+    label: "Repo understanding",
+    detail: "Reads your architecture, dependencies, and conventions before changing anything.",
+  },
+  {
+    label: "Astra API",
+    detail: "Integrate the same model directly into your products via a simple REST API.",
+  },
+];
+
 export function Hero() {
   const reduce = useReducedMotion();
   const enter = (delay: number) =>
@@ -41,35 +56,27 @@ export function Hero() {
             <span className="size-1.5 animate-pulse rounded-full bg-bronze" />
           </span>
           <p className="font-mono text-[11px] uppercase tracking-eyebrow text-bronze">
-            Ren AI · Software engineering intelligence
+            Ren Labs · AI development platform
           </p>
         </motion.div>
 
         <motion.h1
           {...enter(0.08)}
-          className="mt-8 font-serif text-display-xl font-normal text-ink"
+          className="mt-8 max-w-[20ch] font-serif text-display-xl font-normal text-ink text-balance"
         >
-          Ren Code
+          Build AI-native products at enterprise pace.
         </motion.h1>
 
         <motion.p
-          {...enter(0.14)}
-          className="mt-6 max-w-[30ch] font-serif text-headline font-normal text-ink-soft text-balance"
+          {...enter(0.16)}
+          className="mt-6 max-w-[52ch] text-lede text-graphite text-pretty"
         >
-          AI software engineering that{" "}
-          <em className="text-bronze-deep">understands your codebase</em>.
+          Made for enterprise startups building AI-native solutions — Ren Labs
+          pairs a frontier-grade coding model with a full software engineering
+          workspace, so your team ships without growing headcount.
         </motion.p>
 
-        <motion.p
-          {...enter(0.22)}
-          className="mt-8 max-w-[58ch] text-lede text-graphite text-pretty"
-        >
-          Powered by Astra, Ren AI&apos;s flagship language model — built to
-          understand repositories, reason about architecture, and execute
-          complex development tasks.
-        </motion.p>
-
-        <motion.div {...enter(0.32)} className="mt-12 flex flex-wrap items-center gap-4">
+        <motion.div {...enter(0.26)} className="mt-12 flex flex-wrap items-center gap-4">
           <Button href="/dashboard" size="lg">
             Start building
           </Button>
@@ -79,33 +86,19 @@ export function Hero() {
           </Button>
         </motion.div>
 
-        <motion.div {...enter(0.46)} className="mt-24 md:mt-32">
+        <motion.div {...enter(0.42)} className="mt-24 md:mt-32">
           <div className="rule" />
-          <div className="grid gap-x-8 gap-y-8 pt-8 sm:grid-cols-2">
-            <Link href="/code#new-project" className="group block">
-              <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-graphite-soft">
-                Workflow 01
-              </p>
-              <p className="mt-3 font-serif text-title text-ink transition-colors duration-300 group-hover:text-bronze-deep">
-                Start a new project from a prompt
-              </p>
-              <p className="mt-2 max-w-[40ch] text-sm leading-relaxed text-graphite">
-                Describe what you want to build — a SaaS, a CRM, an internal
-                tool — and watch it take shape.
-              </p>
-            </Link>
-            <Link href="/code#repository" className="group block sm:border-l sm:border-line sm:pl-8">
-              <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-graphite-soft">
-                Workflow 02
-              </p>
-              <p className="mt-3 font-serif text-title text-ink transition-colors duration-300 group-hover:text-bronze-deep">
-                Continue an existing repository
-              </p>
-              <p className="mt-2 max-w-[40ch] text-sm leading-relaxed text-graphite">
-                Connect GitHub and let Ren Code understand the codebase before
-                it changes a line.
-              </p>
-            </Link>
+          <div className="grid gap-x-8 gap-y-8 pt-8 sm:grid-cols-3">
+            {pillars.map((p) => (
+              <div key={p.label}>
+                <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-graphite-soft">
+                  {p.label}
+                </p>
+                <p className="mt-3 text-[14px] leading-relaxed text-graphite text-pretty">
+                  {p.detail}
+                </p>
+              </div>
+            ))}
           </div>
         </motion.div>
       </Container>

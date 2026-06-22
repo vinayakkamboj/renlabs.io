@@ -1,11 +1,44 @@
 import { Hero } from "@/components/site/hero";
 import { WorkflowsSection } from "@/components/site/workflows-section";
-import { GithubSection } from "@/components/site/github-section";
 import { ResearchModelSection } from "@/components/site/research-model-section";
 import { PhilosophySection } from "@/components/site/philosophy-section";
 import { Container } from "@/components/ui/container";
 import { Reveal } from "@/components/ui/reveal";
 import { Button } from "@/components/ui/button";
+
+function EnterpriseSection() {
+  const signals = [
+    { stat: "89.1%", label: "SWE-bench Verified", sub: "#1 on agentic bug-fixing" },
+    { stat: "10–60×", label: "lower cost", sub: "vs. frontier model APIs" },
+    { stat: "< 30s", label: "first generation", sub: "from prompt to running code" },
+  ];
+
+  return (
+    <section className="border-t border-line bg-paper-deep/50 py-28 md:py-36">
+      <Container>
+        <Reveal className="mx-auto max-w-2xl text-center">
+          <p className="font-mono text-[11px] uppercase tracking-eyebrow text-bronze">
+            Built for enterprise startups
+          </p>
+          <h2 className="mt-5 font-serif text-display font-normal text-ink text-balance">
+            Frontier model performance. Startup-friendly economics.
+          </h2>
+        </Reveal>
+        <div className="mt-16 grid gap-px overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-3">
+          {signals.map((s) => (
+            <Reveal key={s.label} className="bg-paper p-8 text-center md:p-10">
+              <p className="font-serif text-[3rem] font-normal leading-none text-bronze-deep">
+                {s.stat}
+              </p>
+              <p className="mt-3 text-[15px] font-medium text-ink">{s.label}</p>
+              <p className="mt-1.5 text-[13px] text-graphite">{s.sub}</p>
+            </Reveal>
+          ))}
+        </div>
+      </Container>
+    </section>
+  );
+}
 
 function ClosingSection() {
   return (
@@ -13,21 +46,21 @@ function ClosingSection() {
       <Container>
         <Reveal className="mx-auto max-w-3xl text-center">
           <p className="font-mono text-[11px] uppercase tracking-eyebrow text-bronze">
-            Ren Code
+            Ren Labs
           </p>
           <h2 className="mt-6 font-serif text-display font-normal text-ink text-balance">
-            Start something new, or pick up where your codebase left off.
+            Your AI engineering team, ready on day one.
           </h2>
           <p className="mx-auto mt-6 max-w-[46ch] text-lede text-graphite">
-            Create a workspace, connect a repository, and let Ren Code do the
-            engineering you can review.
+            Enterprise startups move fast. Ren Labs makes sure your engineering
+            keeps up — without scaling headcount to match.
           </p>
           <div className="mt-10 flex flex-wrap justify-center gap-4">
             <Button href="/dashboard" size="lg">
               Start building
             </Button>
-            <Button href="/code" variant="outline" size="lg">
-              How it works
+            <Button href="/docs" variant="outline" size="lg">
+              Read the docs
             </Button>
           </div>
         </Reveal>
@@ -41,7 +74,7 @@ export default function HomePage() {
     <>
       <Hero />
       <WorkflowsSection />
-      <GithubSection />
+      <EnterpriseSection />
       <ResearchModelSection />
       <PhilosophySection />
       <ClosingSection />
