@@ -31,6 +31,11 @@ import {
   buildRepositoryIntelligence,
   formatIntelligenceForPrompt,
 } from "@/lib/ai/repository-intelligence";
+import {
+  isOpenRouterConfigured,
+  openRouterStream,
+  sseToText,
+} from "@/lib/ai/openrouter";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import { deductBuildCredits } from "@/lib/credits/server";
 import { CREDITS_PER_BUILD } from "@/lib/credits/config";
@@ -49,12 +54,10 @@ interface BuildRequest {
   repairIssues?: string;
 }
 
-const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const MAX_OUTPUT_TOKENS = 16_000;
 
 export async function POST(req: NextRequest) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
+  if (!isOpenRouterConfigured()) {
     return Response.json({ error: "builder_not_configured" }, { status: 503 });
   }
 
@@ -145,22 +148,14 @@ export async function POST(req: NextRequest) {
     return { role: m.role, content: m.content };
   });
 
-  // ── 4. Stream from Anthropic ──────────────────────────────────────────────
-  const upstream = await fetch(ANTHROPIC_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: tier.modelId,
-      max_tokens: MAX_OUTPUT_TOKENS,
-      system,
-      messages: apiMessages.slice(-16),
-      stream: true,
-    }),
-  }).catch(() => null);
+  // ── 4. Stream from Astra (via OpenRouter) ─────────────────────────────────
+  const upstream = await openRouterStream(
+    [
+      { role: "system", content: system },
+      ...apiMessages.slice(-16),
+    ],
+    { temperature: 0.4, maxTokens: MAX_OUTPUT_TOKENS },
+  );
 
   if (!upstream || !upstream.ok || !upstream.body) {
     const detail = upstream ? await upstream.text().catch(() => "") : "";
@@ -170,42 +165,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const decoder = new TextDecoder();
-  const encoder = new TextEncoder();
-  let buffer = "";
-
-  const stream = upstream.body.pipeThrough(
-    new TransformStream<Uint8Array, Uint8Array>({
-      transform(chunk, controller) {
-        buffer += decoder.decode(chunk, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          const data = line.trim();
-          if (!data.startsWith("data:")) continue;
-          const payload = data.slice(5).trim();
-          if (!payload || payload === "[DONE]") continue;
-          try {
-            const json = JSON.parse(payload) as {
-              type?: string;
-              delta?: { type?: string; text?: string };
-            };
-            if (
-              json.type === "content_block_delta" &&
-              json.delta?.type === "text_delta" &&
-              json.delta.text
-            ) {
-              controller.enqueue(encoder.encode(json.delta.text));
-            }
-          } catch {
-            // Partial JSON across chunk boundary — wait for more.
-          }
-        }
-      },
-    }),
-  );
-
-  return new Response(stream, {
+  return new Response(sseToText(upstream.body), {
     headers: {
       "Content-Type": "text/plain; charset=utf-8",
       "Cache-Control": "no-store",

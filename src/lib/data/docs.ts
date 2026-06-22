@@ -43,6 +43,16 @@ export const docsNav: DocGroup[] = [
     ],
   },
   {
+    group: "The model",
+    items: [
+      {
+        title: "Astra Benchmarks",
+        href: "/docs/benchmarks",
+        summary: "How Astra v1 performs across standard reasoning and coding evaluations.",
+      },
+    ],
+  },
+  {
     group: "Develop",
     items: [
       {

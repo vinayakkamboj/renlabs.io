@@ -22,7 +22,7 @@ import {
   ScanSearch,
   Terminal,
 } from "lucide-react";
-import { STANDARD_DEPENDENCIES } from "@/lib/builder/base-template";
+import { collectDependencies, detectEntry } from "@/lib/builder/deps";
 import { analyzeWebApp, type WebAppAnalysis } from "@/lib/builder/web-app";
 import type { ProjectFile } from "@/lib/builder/types";
 import { cn } from "@/lib/utils";
@@ -38,32 +38,46 @@ interface PreviewProps {
  * bundler messages and clears as soon as the app is compiled and running, so
  * the perceived wait is exactly the actual wait — no artificial delay.
  */
-function BootOverlay() {
+function BootOverlay({ depCount }: { depCount: number }) {
   const { listen } = useSandpack();
   const [done, setDone] = useState(false);
   const [label, setLabel] = useState("Starting sandbox");
+  const [sub, setSub] = useState<string | null>(null);
 
   useEffect(() => {
     const stop = listen((msg) => {
-      if (msg.type === "start") setLabel("Compiling app");
+      if (msg.type === "start") {
+        setLabel("Resolving dependencies");
+        setSub(`Fetching ${depCount} package${depCount !== 1 ? "s" : ""} from CDN`);
+      }
       if (msg.type === "status" && "status" in msg) {
         const s = (msg as { status?: string }).status;
-        if (s === "installing-dependencies") setLabel("Installing packages");
-        else if (s === "transpiling") setLabel("Compiling app");
+        if (s === "installing-dependencies") {
+          setLabel("Installing dependencies");
+          setSub(`${depCount} package${depCount !== 1 ? "s" : ""} — no npm install needed`);
+        } else if (s === "transpiling") {
+          setLabel("Compiling app");
+          setSub("Building your project");
+        } else if (s === "evaluating") {
+          setLabel("Starting app");
+          setSub(null);
+        }
       }
-      // "done" fires once the bundle is built and rendered.
       if (msg.type === "done") setDone(true);
     });
     return stop;
-  }, [listen]);
+  }, [listen, depCount]);
 
   if (done) return null;
 
   return (
     <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-carbon">
-      <div className="flex items-center gap-2.5 text-[13px] text-dusk-muted">
-        <Loader2 className="size-4 animate-spin text-brass" />
-        {label}…
+      <div className="flex flex-col items-center gap-2 text-center">
+        <div className="flex items-center gap-2.5 text-[13px] text-dusk-muted">
+          <Loader2 className="size-4 animate-spin text-brass" />
+          {label}…
+        </div>
+        {sub && <p className="text-[11.5px] text-dusk-faint">{sub}</p>}
       </div>
     </div>
   );
@@ -108,7 +122,7 @@ function PreviewContent({ packageDeps }: { packageDeps: Record<string, string> }
     <div className="flex h-full flex-col overflow-hidden bg-carbon">
       {/* Preview */}
       <div className="relative min-h-0 flex-1">
-        <BootOverlay />
+        <BootOverlay depCount={Object.keys(packageDeps).length} />
         <SandpackPreviewPane
           showOpenInCodeSandbox={false}
           showRefreshButton={true}
@@ -397,31 +411,25 @@ function SandpackRunner({
   projectFiles: ProjectFile[];
   viewerKey: number;
 }) {
-  const { files, dependencies, packageDeps } = useMemo(() => {
+  const { files, dependencies, entry } = useMemo(() => {
     const fileMap: Record<string, string> = {};
-    let pkgDeps: Record<string, string> = { ...STANDARD_DEPENDENCIES };
-
     for (const f of projectFiles) {
-      if (f.path === "package.json") {
-        try {
-          const parsed = JSON.parse(f.content) as {
-            dependencies?: Record<string, string>;
-          };
-          pkgDeps = { ...pkgDeps, ...(parsed.dependencies ?? {}) };
-        } catch {
-          /* keep standard deps */
-        }
-        continue;
-      }
+      if (f.path === "package.json") continue;
       // index.html is a system shell; the preview supplies its own (below).
       if (f.path === "index.html") continue;
       fileMap["/" + f.path] = f.content;
     }
-
     // The classic bundler reads its HTML shell from /public/index.html.
     fileMap["/public/index.html"] = buildPreviewShell();
 
-    return { files: fileMap, dependencies: pkgDeps, packageDeps: pkgDeps };
+    // Auto-resolve every dependency the project imports, and find its real
+    // entry file (projects differ: main.tsx, index.jsx, …).
+    const deps = collectDependencies(projectFiles);
+    return {
+      files: fileMap,
+      dependencies: deps,
+      entry: detectEntry(projectFiles),
+    };
   }, [projectFiles]);
 
   if (!projectFiles.length) {
@@ -440,7 +448,7 @@ function SandpackRunner({
       // a CDN. Boots in ~1–3s versus the 5–15s Nodebox-based vite template.
       template="react-ts"
       files={files}
-      customSetup={{ dependencies, entry: "/src/main.tsx" }}
+      customSetup={{ dependencies, entry }}
       options={{
         recompileMode: "delayed",
         recompileDelay: 300,
@@ -450,7 +458,7 @@ function SandpackRunner({
       }}
       style={{ height: "100%", display: "flex", flexDirection: "column" }}
     >
-      <PreviewContent packageDeps={packageDeps} />
+      <PreviewContent packageDeps={dependencies} />
     </SandpackProvider>
   );
 }

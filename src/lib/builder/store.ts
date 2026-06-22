@@ -261,7 +261,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     } catch (e) {
       const reason =
         e instanceof Error && e.message === "builder_not_configured"
-          ? "The build agent isn't configured. Set ANTHROPIC_API_KEY on the server."
+          ? "The build agent isn't configured. Set OPENROUTER_API_KEY on the server."
           : "The build failed. Check your connection and try again.";
       const assistantMsg: BuildMessage = {
         id: newId(),

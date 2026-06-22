@@ -71,7 +71,9 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user && (path.startsWith("/dashboard") || path.startsWith("/admin"))) {
+  // /admin handles its own (dedicated) sign-in screen, so don't bounce it to the
+  // user login. Only the Ren Code dashboard redirects unauthenticated users.
+  if (!user && path.startsWith("/dashboard")) {
     const redirect = nextUrl.clone();
     redirect.pathname = "/login";
     redirect.search = "";
