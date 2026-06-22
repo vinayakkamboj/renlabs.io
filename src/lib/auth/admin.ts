@@ -12,9 +12,8 @@ export interface AdminUser {
  * email are included to be safe.
  */
 const SUPERADMINS = [
-  "vinayakkamoj01@gmail.com",
   "vinayakkamboj01@gmail.com",
-  "getsubit@gmail.com",
+  "vinayak@renlabs.io",
 ];
 
 function isSuperAdmin(email: string): boolean {
