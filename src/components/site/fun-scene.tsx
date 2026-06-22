@@ -1,18 +1,16 @@
 import { Button } from "@/components/ui/button";
-import { Sticker } from "@/components/ui/sticker";
+import { Sticker, type StickerVariant } from "@/components/ui/sticker";
 
 /** Shared layout for the hidden, playful routes. */
 export function FunScene({
   sticker,
-  tone = "bronze",
   tilt = -7,
   eyebrow,
   title,
   body,
   cta = "Take me home",
 }: {
-  sticker: string;
-  tone?: "bronze" | "ink" | "paper";
+  sticker: StickerVariant;
   tilt?: number;
   eyebrow: string;
   title: string;
@@ -35,7 +33,7 @@ export function FunScene({
         }}
       />
       <div className="relative">
-        <Sticker label={sticker} tone={tone} tilt={tilt} className="mb-12" />
+        <Sticker variant={sticker} tilt={tilt} className="mb-12" />
         <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-graphite-soft">
           {eyebrow}
         </p>

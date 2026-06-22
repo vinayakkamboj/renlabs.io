@@ -9,8 +9,7 @@ export const metadata: Metadata = {
 export default function AreWeThereYetPage() {
   return (
     <FunScene
-      sticker="almost"
-      tone="paper"
+      sticker="rocket"
       tilt={4}
       eyebrow="Status check"
       title="No. Not yet. Soon."

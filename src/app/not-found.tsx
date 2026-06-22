@@ -27,7 +27,7 @@ export default function NotFound() {
       />
 
       <div className="relative">
-        <Sticker label="oops!" className="mb-12" />
+        <Sticker variant="cat" className="mb-12" />
 
         <p className="font-mono text-[11px] uppercase tracking-[0.22em] text-graphite-soft">
           Error 404

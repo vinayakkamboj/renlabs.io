@@ -9,8 +9,7 @@ export const metadata: Metadata = {
 export default function AnswerPage() {
   return (
     <FunScene
-      sticker="42"
-      tone="ink"
+      sticker="robot"
       tilt={6}
       eyebrow="The Answer"
       title="Life, the universe, and everything."

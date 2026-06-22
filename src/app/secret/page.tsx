@@ -9,8 +9,7 @@ export const metadata: Metadata = {
 export default function SecretPage() {
   return (
     <FunScene
-      sticker="shhh"
-      tone="bronze"
+      sticker="ghost"
       tilt={-5}
       eyebrow="Classified"
       title="You found the secret page."

@@ -9,8 +9,7 @@ export const metadata: Metadata = {
 export default function TeapotPage() {
   return (
     <FunScene
-      sticker="418"
-      tone="bronze"
+      sticker="mug"
       tilt={-8}
       eyebrow="HTTP 418"
       title="I'm a teapot."

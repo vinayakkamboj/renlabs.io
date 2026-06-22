@@ -69,3 +69,23 @@ npm run lint
 
 All benchmark figures, publications, and platform telemetry are illustrative
 fixtures for a fictional organization.
+
+## Hidden routes (easter eggs)
+
+A few playful pages scattered around the site, each with its own die-cut
+sticker illustration. All are `noindex`. Kept here so they don't get lost:
+
+| Route | Sticker | What it is |
+|-------|---------|------------|
+| `/teapot` | mug | HTTP 418 "I'm a teapot" joke |
+| `/42` | robot | The answer to life, the universe, and everything |
+| `/secret` | ghost | "You found the secret page" |
+| `/are-we-there-yet` | rocket | "No. Not yet. Soon." |
+| `/lmfao` | cat | Respect for typing it into the URL bar |
+| `/brb` | mug | "Back in a bit" — gone for coffee |
+| `/meow` | cat | Meet the official Ren Labs cat |
+
+The 404 page (`not-found.tsx`) also uses the cat sticker and links to
+`/teapot`. Stickers live in `src/components/ui/sticker.tsx`
+(`cat`, `ghost`, `rocket`, `robot`, `mug`); the shared page layout is
+`src/components/site/fun-scene.tsx`.
