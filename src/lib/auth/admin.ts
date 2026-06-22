@@ -4,6 +4,17 @@ import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 export interface AdminUser {
   id: string;
   email: string;
+  isSuperAdmin: boolean;
+}
+
+/**
+ * Built-in superadmin(s). Always have full admin access regardless of env
+ * config or database role. Keep this list tiny.
+ */
+const SUPERADMINS = ["vinayakkamoj01@gmail.com"];
+
+function isSuperAdmin(email: string): boolean {
+  return SUPERADMINS.includes(email.toLowerCase());
 }
 
 /** Emails granted admin access via the ADMIN_EMAILS env allowlist. */
@@ -16,8 +27,8 @@ function adminEmails(): string[] {
 
 /**
  * Returns the current user if they are an admin, else null. A user is an admin
- * if their email is in the ADMIN_EMAILS allowlist OR their profile role is
- * 'admin'. Read-only — never mutates.
+ * if they are a built-in superadmin, their email is in the ADMIN_EMAILS
+ * allowlist, or their profile role is 'admin'. Read-only — never mutates.
  */
 export async function getAdminUser(): Promise<AdminUser | null> {
   if (!isSupabaseConfigured()) return null;
@@ -29,8 +40,13 @@ export async function getAdminUser(): Promise<AdminUser | null> {
   if (!user) return null;
 
   const email = (user.email ?? "").toLowerCase();
+
+  if (email && isSuperAdmin(email)) {
+    return { id: user.id, email, isSuperAdmin: true };
+  }
+
   if (email && adminEmails().includes(email)) {
-    return { id: user.id, email };
+    return { id: user.id, email, isSuperAdmin: false };
   }
 
   // Fall back to a role flag on the user's own profile (readable under RLS).
@@ -40,7 +56,7 @@ export async function getAdminUser(): Promise<AdminUser | null> {
     .eq("id", user.id)
     .single();
   if (profile?.role === "admin") {
-    return { id: user.id, email };
+    return { id: user.id, email, isSuperAdmin: false };
   }
 
   return null;

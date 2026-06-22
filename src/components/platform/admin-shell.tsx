@@ -16,9 +16,11 @@ const navLinks = [
 export function AdminShell({
   children,
   adminEmail,
+  isSuperAdmin = false,
 }: {
   children: React.ReactNode;
   adminEmail: string;
+  isSuperAdmin?: boolean;
 }) {
   const pathname = usePathname();
 
@@ -31,7 +33,7 @@ export function AdminShell({
             Ren Labs
           </span>
           <span className="rounded-full border border-signal-red/40 bg-signal-red/10 px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.16em] text-signal-red">
-            Internal
+            {isSuperAdmin ? "Superadmin" : "Internal"}
           </span>
         </Link>
 

@@ -9,9 +9,32 @@ import { NextResponse, type NextRequest } from "next/server";
  * and everything stays publicly reachable (demo mode).
  */
 export async function middleware(request: NextRequest) {
+  const host = (request.headers.get("host") ?? "").split(":")[0].toLowerCase();
+  const nextUrl = request.nextUrl;
+
+  // Host-based routing: admin.renlabs.io (or any admin.* host) serves the
+  // /admin tree. Links inside the panel already use /admin/* paths, so this
+  // mainly maps the subdomain root and bare paths onto the admin routes.
+  if (host.startsWith("admin.")) {
+    if (!nextUrl.pathname.startsWith("/admin")) {
+      const rewritten = nextUrl.clone();
+      rewritten.pathname =
+        nextUrl.pathname === "/" ? "/admin" : `/admin${nextUrl.pathname}`;
+      return NextResponse.rewrite(rewritten);
+    }
+  }
+
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
   if (!url || !anon) return NextResponse.next();
+
+  // Only do the session work for paths that actually gate on auth.
+  const path = nextUrl.pathname;
+  const needsAuth =
+    path.startsWith("/dashboard") ||
+    path.startsWith("/admin") ||
+    path === "/login";
+  if (!needsAuth) return NextResponse.next();
 
   let supabaseResponse = NextResponse.next({ request });
 
@@ -38,10 +61,8 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const path = request.nextUrl.pathname;
-
-  if (!user && path.startsWith("/dashboard")) {
-    const redirect = request.nextUrl.clone();
+  if (!user && (path.startsWith("/dashboard") || path.startsWith("/admin"))) {
+    const redirect = nextUrl.clone();
     redirect.pathname = "/login";
     redirect.search = "";
     redirect.searchParams.set("next", path);
@@ -49,7 +70,7 @@ export async function middleware(request: NextRequest) {
   }
 
   if (user && path === "/login") {
-    const redirect = request.nextUrl.clone();
+    const redirect = nextUrl.clone();
     redirect.pathname = "/dashboard";
     redirect.search = "";
     return NextResponse.redirect(redirect);
@@ -59,5 +80,9 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/login"],
+  // Run on everything except Next internals and static assets, so the admin
+  // host rewrite reaches the subdomain root. Auth work is still scoped above.
+  matcher: [
+    "/((?!api|_next/static|_next/image|favicon.ico|icon.svg|robots.txt|sitemap.xml).*)",
+  ],
 };
