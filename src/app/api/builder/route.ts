@@ -33,7 +33,6 @@ import {
 } from "@/lib/ai/repository-intelligence";
 import { isAstraConfigured, streamAstraText } from "@/lib/ai/astra";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
-import { getAdminUser } from "@/lib/auth/admin";
 import { deductBuildCredits } from "@/lib/credits/server";
 import { CREDITS_PER_BUILD } from "@/lib/credits/config";
 import type { ProjectFile } from "@/lib/builder/types";
@@ -91,29 +90,25 @@ export async function POST(req: NextRequest) {
       return Response.json({ error: "auth_required" }, { status: 401 });
     }
 
-    // Admins (founder / internal team) build free so they can test Ren Code
-    // without burning credits. Everyone else goes through the metered gate.
-    const admin = await getAdminUser();
+    // Everyone — including admins — goes through the metered gate. Admins top
+    // up their own balance from the admin panel (Users → Grant credits) rather
+    // than building for free, so testing usage is always accounted for.
+    const deduct = await deductBuildCredits(userId, tier.id as ModelTierId, projectId);
 
-    if (!admin) {
-      // Deduct credits atomically before hitting the model.
-      const deduct = await deductBuildCredits(userId, tier.id as ModelTierId, projectId);
-
-      if (!deduct.ok) {
-        if (deduct.error === "insufficient_credits") {
-          return Response.json(
-            {
-              error: "insufficient_credits",
-              cost: CREDITS_PER_BUILD[tier.id as ModelTierId],
-            },
-            { status: 402 },
-          );
-        }
-        // Other DB error — fail closed to prevent unbounded API calls.
-        return Response.json({ error: "credit_check_failed" }, { status: 500 });
+    if (!deduct.ok) {
+      if (deduct.error === "insufficient_credits") {
+        return Response.json(
+          {
+            error: "insufficient_credits",
+            cost: CREDITS_PER_BUILD[tier.id as ModelTierId],
+          },
+          { status: 402 },
+        );
       }
-      // deduct.skipped === true means the credits table doesn't exist yet (dev).
+      // Other DB error — fail closed to prevent unbounded API calls.
+      return Response.json({ error: "credit_check_failed" }, { status: 500 });
     }
+    // deduct.skipped === true means the credits table doesn't exist yet (dev).
   }
 
   // ── 3. Build the prompt and context pack ──────────────────────────────────
