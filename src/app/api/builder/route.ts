@@ -52,7 +52,10 @@ interface BuildRequest {
   images?: string[];
 }
 
-const MAX_OUTPUT_TOKENS = 16_000;
+// Generous ceiling so multi-file builds finish without truncating mid-file.
+// (If a response still gets cut off, the parser drops the incomplete file and
+// the build loop repairs it — but more headroom means that rarely fires.)
+const MAX_OUTPUT_TOKENS = 32_000;
 
 export async function POST(req: NextRequest) {
   if (!isAstraConfigured()) {

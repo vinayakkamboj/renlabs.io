@@ -31,59 +31,52 @@ export function parseFilePatchPlan(content: string): FilePatchPlan | null {
 
   const raw = match[1].trim();
 
-  // Strategy 1 — direct parse (happy path)
+  // Strategy 1 — direct parse (happy path: the block is complete and valid).
   try {
     const result = JSON.parse(raw) as FilePatchPlan;
     if (result?.changes?.length) return normalize(result);
   } catch {
-    /* fall through */
+    /* fall through to recovery */
   }
 
-  // Strategy 2 — close a truncated JSON string with common suffixes
-  for (const suffix of ['"}]}', '"]}', "]}", "}"]) {
-    try {
-      const result = JSON.parse(raw + suffix) as FilePatchPlan;
-      if (result?.changes?.length) return normalize(result);
-    } catch {
-      /* try next */
-    }
+  // Strategy 2 — character-scan for every FULLY-CLOSED {"path","content"} pair.
+  //
+  // This is the *safe* recovery for a truncated stream. It keeps only files
+  // whose content string was completely written, and DROPS any file that was
+  // cut off mid-content. We deliberately never "close" a truncated string with
+  // a synthetic suffix: doing so fabricates a file that ends mid-token (e.g. an
+  // unterminated SVG path), which then crashes the preview. Better to drop the
+  // incomplete file — the missing-import / truncation checks will flag it and
+  // the build loop will repair it.
+  const scanned = extractCompletePatchesFromPartial(raw);
+  if (scanned.length) {
+    return { plan: extractPlanField(raw) ?? "Recovered from partial response", changes: scanned };
   }
 
-  // Strategy 3 — truncate at the last complete patch boundary, then close
-  for (const sep of ['"},{"path":', '}, {"path":', '} ,{"path":']) {
-    const lastIdx = raw.lastIndexOf(sep);
-    if (lastIdx > 0) {
-      const truncated = raw.slice(0, lastIdx + 1);
-      for (const suffix of ["]}", "}"]) {
-        try {
-          const result = JSON.parse(truncated + suffix) as FilePatchPlan;
-          if (result?.changes?.length) return normalize(result);
-        } catch {
-          /* try next */
-        }
-      }
-    }
-  }
-
-  // Strategy 4 — character-scan every fully-closed {"path","content"} pair
-  const changes = extractCompletePatchesFromPartial(raw);
-  if (changes.length) {
-    return { plan: "Recovered from partial response", changes };
-  }
-
-  // Strategy 5 — XML-ish <file path="...">...</file> fallback
+  // Strategy 3 — XML-ish <file path="...">...</file> fallback.
   const tagged = extractTaggedFiles(raw);
   if (tagged.length) {
     return { plan: "Recovered from tagged response", changes: tagged };
   }
 
-  // Strategy 6 — markdown ### path \n ```...``` sections
+  // Strategy 4 — markdown ### path \n ```...``` sections.
   const markdown = extractMarkdownFileSections(raw);
   if (markdown.length) {
     return { plan: "Recovered from markdown response", changes: markdown };
   }
 
   return null;
+}
+
+/** Best-effort pull of the "plan" summary string from a (possibly truncated) block. */
+function extractPlanField(raw: string): string | null {
+  const m = raw.match(/"plan"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+  if (!m) return null;
+  try {
+    return JSON.parse(`"${m[1]}"`) as string;
+  } catch {
+    return m[1];
+  }
 }
 
 function normalize(plan: FilePatchPlan): FilePatchPlan {
@@ -191,6 +184,83 @@ function isSafePath(path: string): boolean {
   return Boolean(path) && !path.startsWith("/") && !path.includes("..");
 }
 
+/** True if `path` is a JS/TS source file we can syntax-sanity-check. */
+export function isCodePath(path: string): boolean {
+  return /\.(tsx?|jsx?|mjs|cjs)$/.test(path);
+}
+
+/**
+ * Heuristic completeness check for a JS/TS/JSX/TSX file. Catches the common
+ * truncation failure modes — a file cut off mid-stream — without a full parser:
+ *
+ *   - an unterminated string / template literal at EOF
+ *   - an unterminated block comment at EOF
+ *   - unbalanced (), [], {} brackets (more opens than closes, or mismatched)
+ *
+ * It walks the source, skipping over string and comment regions so that
+ * brackets *inside* strings/comments don't count. This is intentionally
+ * conservative: anything it can't be sure about, it treats as complete, so a
+ * valid file is never wrongly rejected.
+ */
+export function isCodeFileComplete(content: string): boolean {
+  const src = content;
+  const stack: string[] = [];
+  const closeToOpen: Record<string, string> = { ")": "(", "]": "[", "}": "{" };
+
+  let inString: string | null = null; // active quote char: ' " `
+  let inLineComment = false;
+  let inBlockComment = false;
+
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    const next = src[i + 1] ?? "";
+
+    if (inLineComment) {
+      if (ch === "\n") inLineComment = false;
+      continue;
+    }
+    if (inBlockComment) {
+      if (ch === "*" && next === "/") {
+        inBlockComment = false;
+        i++;
+      }
+      continue;
+    }
+    if (inString) {
+      if (ch === "\\") {
+        i++; // skip the escaped character
+        continue;
+      }
+      if (ch === inString) inString = null;
+      continue;
+    }
+
+    // Not currently inside a string or comment.
+    if (ch === "/" && next === "/") {
+      inLineComment = true;
+      i++;
+      continue;
+    }
+    if (ch === "/" && next === "*") {
+      inBlockComment = true;
+      i++;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") {
+      inString = ch;
+      continue;
+    }
+    if (ch === "(" || ch === "[" || ch === "{") {
+      stack.push(ch);
+    } else if (ch === ")" || ch === "]" || ch === "}") {
+      if (stack.pop() !== closeToOpen[ch]) return false; // mismatched close
+    }
+  }
+
+  // Complete only if we didn't end mid-string, mid-comment, or with open brackets.
+  return inString === null && !inBlockComment && stack.length === 0;
+}
+
 /** Remove the <file_patches> block (closed or truncated) from chat content. */
 export function stripFilePatchPlan(content: string): string {
   let stripped = content.replace(/<file_patches>[\s\S]*?<\/file_patches>/, "");
@@ -238,12 +308,21 @@ export function detectFatalIssues(
     });
   }
 
-  // Truncation heuristic — key files that are suspiciously short.
+  // Truncation detection. Two signals:
+  //  1. A key file that's suspiciously short — likely a stub or cut-off.
+  //  2. Any code file whose brackets/strings don't balance — cut off mid-file.
   for (const change of plan.changes) {
     if (KEY_FILES.includes(change.path) && change.content.trim().length < 120) {
       issues.push({
         type: "truncated",
         detail: `${change.path} is suspiciously short — likely truncated.`,
+      });
+      continue;
+    }
+    if (isCodePath(change.path) && !isCodeFileComplete(change.content)) {
+      issues.push({
+        type: "truncated",
+        detail: `${change.path} has unbalanced brackets or an unterminated string — it was likely cut off mid-file.`,
       });
     }
   }

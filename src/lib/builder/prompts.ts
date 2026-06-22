@@ -40,7 +40,13 @@ Your response MUST contain exactly one \`<file_patches>\` block and nothing else
 3. \`deletes\` and \`renames\` are optional — omit them if unused.
 4. Only include files you are actually creating or changing. Don't re-emit unchanged files.
 5. Never write to \`src/main.tsx\`, \`index.html\`, or \`vite.config.ts\` — these are system files.
-6. A relative import in any file you write MUST resolve to a file that exists or is included in the same patch. No dangling imports.`;
+6. A relative import in any file you write MUST resolve to a file that exists or is included in the same patch. No dangling imports.
+
+### Completeness (critical — a cut-off file breaks the whole preview)
+7. Every file must be COMPLETE: balanced brackets, closed strings/tags, no \`// TODO\` stubs. Never stop in the middle of a file.
+8. If the full change won't fit in one response, build FEWER files this turn and finish them properly, rather than starting many and truncating any. The user can ask for the rest next.
+9. Use \`lucide-react\` icons for ALL iconography (e.g. \`import { Star } from "lucide-react"\`). NEVER hand-write inline \`<svg>\` \`<path d="…">\` data — long path strings bloat the response and are the #1 cause of truncated files.
+10. Keep each file focused; factor large/repetitive markup into smaller components and move big mock datasets into \`src/data/\`.`;
 
 const ENGINEERING = `## Engineering contract
 
@@ -178,6 +184,12 @@ Do not import packages that aren't in the existing dependencies. Do not add conf
 export function buildRepairPrompt(issues: string): string {
   return `${buildEditPrompt()}
 
-## The previous attempt was rejected. Fix these issues and re-emit the FULL file_patches block:
-${issues}`;
+## The previous attempt was rejected. Re-emit the FULL file_patches block, fixing these issues:
+${issues}
+
+When an issue says a file was truncated / had unbalanced brackets, it means your
+last response was CUT OFF mid-file. To avoid it this time:
+- Emit FEWER files — only the ones needed to fix these issues — and make each one complete.
+- Replace any hand-written inline \`<svg><path d="…">\` with a \`lucide-react\` icon.
+- Double-check brackets, quotes, and JSX tags are all closed before you finish.`;
 }

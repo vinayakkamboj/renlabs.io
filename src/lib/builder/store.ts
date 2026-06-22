@@ -17,6 +17,8 @@ import {
   applyPatchPlan,
   detectFatalIssues,
   describeFatalIssues,
+  isCodePath,
+  isCodeFileComplete,
 } from "./file-patches";
 import { createBaseTemplate } from "./base-template";
 import { DEFAULT_MODEL_TIER, type ModelTierId } from "./model-tiers";
@@ -110,6 +112,9 @@ function describeBuildError(e: unknown): string {
   }
   if (msg === "auth_required") {
     return "Your session expired. Sign in again to keep building.";
+  }
+  if (msg === "truncated_empty") {
+    return "Astra's response was cut off before any complete file came through. Try again, or break the request into smaller steps.";
   }
   if (msg.startsWith("upstream:")) {
     const [, statusStr, ...rest] = msg.split(":");
@@ -253,7 +258,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       let full = await runBuild();
       let plan = parseFilePatchPlan(full);
 
-      // One repair attempt if the candidate is fatally broken.
+      // One repair attempt if the candidate is fatally broken (e.g. a file was
+      // truncated mid-stream, or an import dangles). Keep whichever attempt is
+      // cleaner — the repair wins if it has strictly fewer fatal issues.
       if (plan) {
         const issues = detectFatalIssues(plan, get().projectFiles, get().isFirstBuild);
         if (issues.length) {
@@ -266,7 +273,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
               get().projectFiles,
               get().isFirstBuild,
             );
-            if (!retryIssues.length) plan = retryPlan;
+            if (retryIssues.length < issues.length) plan = retryPlan;
           }
         }
       }
@@ -292,13 +299,37 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       }
 
       set({ phase: "applying" });
+
+      // Final safety net: never write a code file that is syntactically
+      // incomplete (cut off mid-stream). Dropping it keeps the previous good
+      // version (for edits) or omits the file (for new ones) — either is far
+      // safer than crashing the preview with an unterminated-string error.
+      const droppedFiles = plan.changes
+        .filter((c) => isCodePath(c.path) && !isCodeFileComplete(c.content))
+        .map((c) => c.path);
+      if (droppedFiles.length) {
+        plan = {
+          ...plan,
+          changes: plan.changes.filter((c) => !droppedFiles.includes(c.path)),
+        };
+      }
+
+      if (!plan.changes.length) {
+        // The whole response was unusable (everything truncated).
+        throw new Error("truncated_empty");
+      }
+
       const nextFiles = applyPatchPlan(get().projectFiles, plan);
       const changedPaths = plan.changes.map((c) => c.path);
+
+      const note = droppedFiles.length
+        ? `\n\n_Note: ${droppedFiles.length} file(s) came back incomplete and were skipped to keep the preview working — ask me to finish ${droppedFiles.join(", ")}._`
+        : "";
 
       const assistantMsg: BuildMessage = {
         id: newId(),
         role: "assistant",
-        content: prose || plan.plan,
+        content: (prose || plan.plan) + note,
         plan: { summary: plan.plan, files: changedPaths },
         createdAt: new Date().toISOString(),
       };
