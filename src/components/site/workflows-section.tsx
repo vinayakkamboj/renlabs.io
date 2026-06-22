@@ -65,12 +65,12 @@ export function WorkflowsSection() {
             </div>
             <p className="mt-3 max-w-[44ch] text-[15px] leading-relaxed text-graphite text-pretty">
               Integrate Astra directly into your own applications. The same model
-              powering Ren Code — exposed as a simple REST API with OpenAI-compatible
-              streaming, tool use, and low latency.
+              powering Ren Code — exposed as a clean REST API with streaming,
+              tool use, and the low latency your product demands.
             </p>
             <div className="mt-7 grid grid-cols-2 gap-x-6 gap-y-2.5">
               {[
-                "OpenAI-compatible",
+                "Simple REST API",
                 "Streaming responses",
                 "Function calling",
                 "Low latency",
