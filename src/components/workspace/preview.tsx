@@ -333,11 +333,11 @@ function RepoPreviewGate({
     setStep(0);
     const stepTimer = setInterval(() => {
       setStep((s) => Math.min(s + 1, ANALYSIS_STEPS.length - 1));
-    }, 700);
+    }, 420);
     const doneTimer = setTimeout(() => {
       clearInterval(stepTimer);
       setAnalyzing(false);
-    }, 2800);
+    }, 1500);
     return () => {
       clearInterval(stepTimer);
       clearTimeout(doneTimer);
@@ -373,11 +373,65 @@ function RepoPreviewGate({
     );
   }
 
+  if (analysis.status === "static") {
+    return (
+      <StaticRunner
+        projectFiles={projectFiles}
+        viewerKey={viewerKey}
+        entryHtml={analysis.entryHtml ?? "index.html"}
+      />
+    );
+  }
+
   if (analysis.status !== "previewable") {
     return <UnsupportedNotice analysis={analysis} />;
   }
 
   return <SandpackRunner projectFiles={projectFiles} viewerKey={viewerKey} />;
+}
+
+/**
+ * Serves a plain static site (HTML/CSS/JS, no framework) with no bundling.
+ * Files are re-rooted at the entry HTML's directory so relative asset links
+ * (./style.css, ./app.js) resolve, and the entry is served as /index.html.
+ */
+function StaticRunner({
+  projectFiles,
+  viewerKey,
+  entryHtml,
+}: {
+  projectFiles: ProjectFile[];
+  viewerKey: number;
+  entryHtml: string;
+}) {
+  const files = useMemo(() => {
+    const dir = entryHtml.includes("/")
+      ? entryHtml.slice(0, entryHtml.lastIndexOf("/") + 1)
+      : "";
+    const map: Record<string, string> = {};
+    for (const f of projectFiles) {
+      if (f.path === "package.json") continue;
+      // Re-root files under the entry's directory so relative links resolve.
+      const rel = dir && f.path.startsWith(dir) ? f.path.slice(dir.length) : f.path;
+      map["/" + rel] = f.content;
+    }
+    // Guarantee the entry is reachable at /index.html.
+    const entry = projectFiles.find((f) => f.path === entryHtml);
+    if (entry) map["/index.html"] = entry.content;
+    return map;
+  }, [projectFiles, entryHtml]);
+
+  return (
+    <SandpackProvider
+      key={viewerKey}
+      template="static"
+      files={files}
+      options={{ recompileMode: "delayed", recompileDelay: 300 }}
+      style={{ height: "100%", display: "flex", flexDirection: "column" }}
+    >
+      <PreviewContent packageDeps={{}} />
+    </SandpackProvider>
+  );
 }
 
 function UnsupportedNotice({ analysis }: { analysis: WebAppAnalysis }) {

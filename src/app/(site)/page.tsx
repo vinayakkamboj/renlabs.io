@@ -8,8 +8,8 @@ import { Button } from "@/components/ui/button";
 
 function EnterpriseSection() {
   const signals = [
-    { stat: "89.1%", label: "SWE-bench Verified", sub: "#1 on agentic bug-fixing" },
-    { stat: "10–60×", label: "lower cost", sub: "vs. frontier model APIs" },
+    { stat: "79.3%", label: "LiveCodeBench", sub: "ahead of Opus 4.8, GPT-5.4 & Gemini" },
+    { stat: "2.7×", label: "lower blended cost", sub: "vs. Claude Opus 4.8" },
     { stat: "< 30s", label: "first generation", sub: "from prompt to running code" },
   ];
 

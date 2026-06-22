@@ -1,25 +1,31 @@
 /**
- * Decides whether an imported project can run in the live preview.
+ * Decides how an imported project should be previewed.
  *
- * The preview runs a client-side React bundle in the browser (Sandpack), so it
- * can render React/Vite-style web apps directly. Full-stack frameworks that need
- * a server (Next.js, Remix, etc.) and non-web projects (backends, CLIs, mobile,
- * other languages) can't be previewed yet — we detect those and tell the user.
+ * The preview runs in the browser (Sandpack). Two things can run with no server:
+ *   • client-side React apps (Vite / CRA)  → bundled and rendered
+ *   • plain static sites (HTML/CSS/JS)      → served as-is
+ *
+ * Server-rendered frameworks (Next.js, Remix, SvelteKit, …) and non-web
+ * projects (backends, CLIs, other languages) can't run client-side yet — we
+ * detect those and explain why, so nothing silently "fails to load".
  */
 
 import type { ProjectFile } from "./types";
 
-export type PreviewStatus = "previewable" | "fullstack" | "non-web";
+export type PreviewStatus = "previewable" | "static" | "fullstack" | "non-web";
 
 export interface WebAppAnalysis {
   status: PreviewStatus;
   framework: string;
   detail: string;
+  /** For static sites: the entry HTML file to serve. */
+  entryHtml?: string;
 }
 
 const NON_WEB_MANIFESTS = [
   "requirements.txt",
   "pyproject.toml",
+  "setup.py",
   "go.mod",
   "cargo.toml",
   "pom.xml",
@@ -27,12 +33,21 @@ const NON_WEB_MANIFESTS = [
   "gemfile",
   "composer.json",
   "pubspec.yaml",
+  "package.swift",
 ];
 
-function readDeps(files: ProjectFile[]): string[] {
-  const pkg = files.find(
+/** Find the project's primary package.json (root preferred, else shallowest). */
+function primaryPackageJson(files: ProjectFile[]): ProjectFile | undefined {
+  const pkgs = files.filter(
     (f) => f.path === "package.json" || f.path.endsWith("/package.json"),
   );
+  if (!pkgs.length) return undefined;
+  return pkgs.sort(
+    (a, b) => a.path.split("/").length - b.path.split("/").length,
+  )[0];
+}
+
+function readDeps(pkg: ProjectFile | undefined): string[] {
   if (!pkg) return [];
   try {
     const parsed = JSON.parse(pkg.content) as {
@@ -48,16 +63,38 @@ function readDeps(files: ProjectFile[]): string[] {
   }
 }
 
+/** React can be detected from deps OR from an actual `import … from "react"`. */
+function importsReact(files: ProjectFile[]): boolean {
+  return files.some(
+    (f) =>
+      /\.(jsx|tsx)$/.test(f.path) &&
+      /\bfrom\s+['"]react['"]/.test(f.content),
+  );
+}
+
+/** Pick the HTML file most likely to be the site entry. */
+function findEntryHtml(files: ProjectFile[]): string | undefined {
+  const htmls = files
+    .filter((f) => f.path.toLowerCase().endsWith(".html"))
+    .map((f) => f.path);
+  if (!htmls.length) return undefined;
+  // Prefer a root-level index.html, then any index.html, then the shallowest.
+  return (
+    htmls.find((p) => p === "index.html") ??
+    htmls.find((p) => p.toLowerCase().endsWith("/index.html")) ??
+    htmls.sort((a, b) => a.split("/").length - b.split("/").length)[0]
+  );
+}
+
 export function analyzeWebApp(files: ProjectFile[]): WebAppAnalysis {
-  const deps = readDeps(files);
+  const pkg = primaryPackageJson(files);
+  const deps = readDeps(pkg);
   const has = (name: string) => deps.includes(name);
   const lowerPaths = files.map((f) => f.path.toLowerCase());
-  const hasHtml = lowerPaths.some((p) => p.endsWith(".html"));
-  const hasPackageJson = files.some(
-    (f) => f.path === "package.json" || f.path.endsWith("/package.json"),
-  );
+  const hasPackageJson = Boolean(pkg);
+  const entryHtml = findEntryHtml(files);
 
-  // Full-stack / server-rendered frameworks — can't run in the client sandbox yet.
+  // Full-stack / server-rendered frameworks — need a server, can't run client-side.
   const fullstack: Array<[boolean, string]> = [
     [has("next"), "Next.js"],
     [has("nuxt") || has("nuxt3"), "Nuxt"],
@@ -65,14 +102,16 @@ export function analyzeWebApp(files: ProjectFile[]): WebAppAnalysis {
     [has("@sveltejs/kit"), "SvelteKit"],
     [has("astro"), "Astro"],
     [has("@angular/core"), "Angular"],
-    [has("vue") || has("vue3"), "Vue"],
-    [has("svelte"), "Svelte"],
+    [has("@nestjs/core"), "NestJS"],
   ];
   const fs = fullstack.find(([yes]) => yes);
 
-  // Client-side React app (Vite / CRA) — this is what the preview can run.
+  // 1. Client-side React app (Vite / CRA) — bundle and render it.
   const isReactClient =
-    has("react") && has("react-dom") && !has("next") && !has("@remix-run/react");
+    !fs &&
+    (has("react") || importsReact(files)) &&
+    !has("next") &&
+    !has("@remix-run/react");
 
   if (isReactClient) {
     return {
@@ -82,44 +121,45 @@ export function analyzeWebApp(files: ProjectFile[]): WebAppAnalysis {
     };
   }
 
+  // 2. Server-rendered framework — explain, don't fail.
   if (fs) {
     return {
       status: "fullstack",
       framework: fs[1],
-      detail: `Live preview for ${fs[1]} apps is coming soon. Ren Code currently previews client-side web apps — our team is working on making full-stack apps previewable. You can still chat with Astra to read and edit this project.`,
+      detail: `${fs[1]} renders on a server, so it can't run in the live preview yet — we're working on it. You can still chat with Astra to read, explain, and edit this project.`,
     };
   }
 
-  // Plain web (HTML/JS) without a recognized framework — treat as not-yet-previewable web.
-  if (hasHtml && hasPackageJson) {
+  // 3. Plain static site (HTML/CSS/JS, no framework) — serve it directly.
+  //    This covers vanilla sites with or without a package.json.
+  const looksNonWeb = lowerPaths.some((p) =>
+    NON_WEB_MANIFESTS.some((m) => p === m || p.endsWith("/" + m)),
+  );
+  if (entryHtml && !looksNonWeb) {
     return {
-      status: "fullstack",
-      framework: "Web",
-      detail:
-        "This looks like a web project we can't preview live just yet. Ren Code currently previews client-side React apps — preview for more web setups is coming soon.",
+      status: "static",
+      framework: "Static site",
+      detail: "A static site — serving it live below.",
+      entryHtml,
     };
   }
 
-  // Anything else (backends, CLIs, other languages, mobile) is not a web app.
-  const looksNonWeb =
-    !hasPackageJson ||
-    lowerPaths.some((p) =>
-      NON_WEB_MANIFESTS.some((m) => p === m || p.endsWith("/" + m)),
-    );
-
-  if (looksNonWeb) {
+  // 4. Recognized backend / other-language manifest — not a web preview.
+  if (looksNonWeb || !hasPackageJson) {
     return {
       status: "non-web",
       framework: "Unknown",
       detail:
-        "This doesn't look like a web app. Ren Code currently only supports web apps — you can try again in the future, as our team is working on supporting full-stack and other project types.",
+        "This doesn't look like a web app we can run in the browser. Ren Code previews web apps today — you can still chat with Astra to read and edit this project, and more project types are coming.",
     };
   }
 
+  // 5. Has a package.json but no recognizable web entry — likely a library or
+  //    a build-step app we can't bundle client-side yet.
   return {
     status: "fullstack",
     framework: "Web",
     detail:
-      "Live preview for this project type is coming soon. Ren Code currently previews client-side React apps.",
+      "We couldn't find a client-side entry point to run live just yet. Ren Code previews React and static web apps today — you can still chat with Astra to work on this project.",
   };
 }
