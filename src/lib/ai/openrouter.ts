@@ -20,7 +20,7 @@ export function isOpenRouterConfigured(): boolean {
 
 /** The Astra model slug on OpenRouter. */
 export function astraModelId(): string {
-  return process.env.OPENROUTER_MODEL ?? "z-ai/glm-4.6";
+  return process.env.OPENROUTER_MODEL ?? "z-ai/glm-5.2";
 }
 
 /**

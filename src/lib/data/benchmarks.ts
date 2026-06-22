@@ -1,7 +1,8 @@
 /**
- * Astra v1 benchmark results. Astra is Ren Labs' tuned reasoning + coding model.
- * Figures are compared against current frontier models. Astra leads the coding /
- * agentic suite (what Ren Code relies on) and stays competitive on reasoning.
+ * Astra v1 benchmark results. Astra is Ren Labs' fine-tuned model built on top
+ * of the GLM 5.2 base. Fine-tuning targets software engineering (SWE-bench,
+ * HumanEval, LiveCodeBench) where the gains are most meaningful for Ren Code.
+ * Figures are compared against current frontier models.
  */
 
 export const ASTRA_VERSION = "Astra v1";
