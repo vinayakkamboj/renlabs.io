@@ -29,7 +29,13 @@ const BREVO_FROM_EMAIL =
 const BREVO_FROM_NAME = process.env.BREVO_FROM_NAME ?? "Ren Labs";
 
 async function sendBrevoEmail(to: string, code: string): Promise<void> {
-  const apiKey = process.env.BREVO_API_KEY;
+  // Trim to defend against a trailing newline/space pasted into the Vercel env UI,
+  // which is a common cause of a "set but broken" key.
+  const apiKey = process.env.BREVO_API_KEY?.trim();
+  console.log(
+    "[send-otp] BREVO_API_KEY:",
+    apiKey ? `present (len ${apiKey.length})` : "MISSING",
+  );
   if (!apiKey) {
     throw new Error(
       "BREVO_API_KEY is not configured. Set it in your environment variables.",
