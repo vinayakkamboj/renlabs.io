@@ -81,7 +81,12 @@ export function AstraChat() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: history.map((m) => ({ role: m.role, content: m.content })),
+          messages: history.map((m) => ({
+            role: m.role,
+            content: m.content,
+            // Forward attached images so Astra actually sees (scans) them.
+            ...(m.images?.length ? { images: m.images } : {}),
+          })),
         }),
       });
 

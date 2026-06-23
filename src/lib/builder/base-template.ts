@@ -148,133 +148,166 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }`;
 
-const APP_TSX = `import { useState } from "react";
-import { BrowserRouter, Routes, Route, NavLink } from "react-router-dom";
-import { Home, LayoutDashboard, Settings, Menu } from "lucide-react";
+const APP_TSX = `import { HashRouter, Routes, Route, NavLink, Link } from "react-router-dom";
+import { Sparkles, ArrowRight, Zap, Shield, Layers } from "lucide-react";
 import { cn } from "./lib/utils";
 
 const NAV = [
-  { to: "/", label: "Home", icon: Home },
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/settings", label: "Settings", icon: Settings },
+  { to: "/", label: "Home" },
+  { to: "/features", label: "Features" },
+  { to: "/about", label: "About" },
 ];
 
-function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
+function Navbar() {
   return (
-    <>
-      {open && (
-        <div className="fixed inset-0 bg-black/40 z-20 md:hidden" onClick={onClose} />
-      )}
-      <aside
-        className={cn(
-          "fixed md:static inset-y-0 left-0 z-30 flex flex-col w-56 bg-card border-r border-border transition-transform duration-200",
-          open ? "translate-x-0" : "-translate-x-full md:translate-x-0",
-        )}
-      >
-        <div className="h-14 flex items-center px-5 border-b border-border shrink-0">
-          <span className="text-base font-semibold text-foreground">My App</span>
-        </div>
-        <nav className="flex flex-col gap-0.5 p-3 flex-1">
-          {NAV.map(({ to, label, icon: Icon }) => (
+    <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur-md">
+      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
+        <Link to="/" className="flex items-center gap-2">
+          <span className="flex size-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <Sparkles className="size-4" />
+          </span>
+          <span className="text-[15px] font-semibold tracking-tight text-foreground">Acme</span>
+        </Link>
+        <nav className="flex items-center gap-1">
+          {NAV.map(({ to, label }) => (
             <NavLink
               key={to}
               to={to}
               end={to === "/"}
               className={({ isActive }) =>
                 cn(
-                  "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
+                  "rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
                   isActive
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                    ? "text-foreground"
+                    : "text-muted-foreground hover:text-foreground",
                 )
               }
             >
-              <Icon className="size-4 shrink-0" />
               {label}
             </NavLink>
           ))}
         </nav>
-      </aside>
+        <button className="hidden items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 sm:inline-flex">
+          Get started
+        </button>
+      </div>
+    </header>
+  );
+}
+
+function Footer() {
+  return (
+    <footer className="border-t border-border">
+      <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-6 py-8 text-sm text-muted-foreground sm:flex-row">
+        <span>© {new Date().getFullYear()} Acme. All rights reserved.</span>
+        <div className="flex items-center gap-5">
+          <Link to="/features" className="transition-colors hover:text-foreground">Features</Link>
+          <Link to="/about" className="transition-colors hover:text-foreground">About</Link>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+const FEATURES = [
+  { icon: Zap, title: "Fast by default", body: "Built for speed, so everything feels instant from the first interaction." },
+  { icon: Shield, title: "Secure & private", body: "Your data stays yours. Sensible defaults that protect by design." },
+  { icon: Layers, title: "Composable", body: "Clean building blocks that fit together however your product needs." },
+];
+
+function HomePage() {
+  return (
+    <>
+      <section className="mx-auto max-w-6xl px-6 py-24 text-center">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
+          <Sparkles className="size-3 text-primary" /> Now in early access
+        </span>
+        <h1 className="mx-auto mt-6 max-w-3xl text-5xl font-semibold tracking-tight text-foreground">
+          The starting point for whatever you want to build.
+        </h1>
+        <p className="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-muted-foreground">
+          Describe your idea and Ren Code shapes it into a real product — pages, navigation,
+          state, and a design that fits.
+        </p>
+        <div className="mt-9 flex items-center justify-center gap-3">
+          <button className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90">
+            Get started <ArrowRight className="size-4" />
+          </button>
+          <Link to="/features" className="rounded-lg border border-border px-5 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-secondary">
+            See features
+          </Link>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-6xl px-6 pb-24">
+        <div className="grid gap-5 sm:grid-cols-3">
+          {FEATURES.map(({ icon: Icon, title, body }) => (
+            <div key={title} className="rounded-2xl border border-border bg-card p-6">
+              <div className="flex size-10 items-center justify-center rounded-xl bg-primary/10">
+                <Icon className="size-5 text-primary" />
+              </div>
+              <h3 className="mt-4 text-base font-semibold text-foreground">{title}</h3>
+              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{body}</p>
+            </div>
+          ))}
+        </div>
+      </section>
     </>
   );
 }
 
-function HomePage() {
+function FeaturesPage() {
   return (
-    <div className="flex flex-col items-center justify-center flex-1 gap-6 p-10 text-center">
-      <div className="size-14 rounded-2xl bg-primary/10 flex items-center justify-center">
-        <Home className="size-7 text-primary" />
-      </div>
-      <div className="space-y-2">
-        <h1 className="text-3xl font-semibold tracking-tight text-foreground">Your app starts here</h1>
-        <p className="max-w-md text-muted-foreground leading-relaxed">
-          Describe what you want to build — Ren Code will architect the full product: pages, routing, state, and design.
-        </p>
-      </div>
-    </div>
-  );
-}
-
-function DashboardPage() {
-  const stats = [
-    { label: "Total Users", value: "1,284" },
-    { label: "Revenue", value: "$4,830" },
-    { label: "Active Now", value: "37" },
-  ];
-  return (
-    <div className="p-6 flex flex-col gap-6">
-      <div>
-        <h2 className="text-xl font-semibold text-foreground">Dashboard</h2>
-        <p className="text-sm text-muted-foreground mt-1">Overview of your key metrics.</p>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {stats.map((s) => (
-          <div key={s.label} className="rounded-xl bg-card border border-border p-5 flex flex-col gap-1">
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{s.label}</span>
-            <span className="text-2xl font-semibold tabular-nums text-foreground">{s.value}</span>
+    <section className="mx-auto max-w-6xl px-6 py-20">
+      <h1 className="text-3xl font-semibold tracking-tight text-foreground">Features</h1>
+      <p className="mt-3 max-w-xl text-muted-foreground">
+        Everything you need, nothing you don't. Replace this with the real capabilities of your product.
+      </p>
+      <div className="mt-10 grid gap-5 sm:grid-cols-2">
+        {FEATURES.map(({ icon: Icon, title, body }) => (
+          <div key={title} className="flex gap-4 rounded-2xl border border-border bg-card p-6">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+              <Icon className="size-5 text-primary" />
+            </div>
+            <div>
+              <h3 className="text-base font-semibold text-foreground">{title}</h3>
+              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{body}</p>
+            </div>
           </div>
         ))}
       </div>
-    </div>
+    </section>
   );
 }
 
-function SettingsPage() {
+function AboutPage() {
   return (
-    <div className="p-6 flex flex-col gap-4">
-      <h2 className="text-xl font-semibold text-foreground">Settings</h2>
-      <p className="text-sm text-muted-foreground">Manage your application preferences.</p>
-    </div>
+    <section className="mx-auto max-w-3xl px-6 py-20">
+      <h1 className="text-3xl font-semibold tracking-tight text-foreground">About</h1>
+      <p className="mt-5 text-lg leading-relaxed text-muted-foreground">
+        This is a starter home page with a working top navigation bar. Tell Ren Code what you want to
+        build and it will reshape this into your product — a landing page, a SaaS app, a marketplace,
+        a tool, a dashboard, whatever fits.
+      </p>
+    </section>
   );
 }
 
 export default function App() {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   return (
-    <BrowserRouter>
-      <div className="flex h-full">
-        <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-        <div className="flex flex-col flex-1 min-w-0">
-          <header className="flex items-center gap-3 h-14 px-4 border-b border-border bg-background md:hidden">
-            <button
-              onClick={() => setSidebarOpen((v) => !v)}
-              className="rounded-lg p-2 text-muted-foreground hover:bg-accent transition-colors"
-              aria-label="Toggle sidebar"
-            >
-              <Menu className="size-5" />
-            </button>
-            <span className="font-semibold text-foreground">My App</span>
-          </header>
-          <main className="flex flex-col flex-1 overflow-auto">
-            <Routes>
-              <Route path="/" element={<HomePage />} />
-              <Route path="/dashboard" element={<DashboardPage />} />
-              <Route path="/settings" element={<SettingsPage />} />
-            </Routes>
-          </main>
-        </div>
+    <HashRouter>
+      <div className="flex min-h-full flex-col">
+        <Navbar />
+        <main className="flex-1">
+          <Routes>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/features" element={<FeaturesPage />} />
+            <Route path="/about" element={<AboutPage />} />
+          </Routes>
+        </main>
+        <Footer />
       </div>
-    </BrowserRouter>
+    </HashRouter>
   );
 }`;
 
@@ -313,26 +346,33 @@ every change and updates it whenever files change.
 
 ## Overview
 
-A fresh React + Vite + Tailwind starter with multi-page routing and state management.
-No product purpose has been defined yet — the first build will shape it from the user's prompt.
+A fresh React + Vite + Tailwind starter: a real web app shell with a top navigation bar,
+a home/landing page, and multi-page routing. No product purpose has been defined yet — the
+first build reshapes this into whatever the user describes (landing page, SaaS app,
+marketplace, tool, dashboard, etc.).
 
 ## Architecture
 
-- \`src/App.tsx\` — thin: BrowserRouter + Routes + Sidebar layout only. No UI logic here.
+- \`src/App.tsx\` — thin: HashRouter + Routes + top Navbar + Footer layout only. No UI logic here.
 - \`src/index.css\` — design tokens (\`:root\` + \`[data-theme="dark"]\`) and base styles.
 - \`src/lib/utils.ts\` — the \`cn()\` className helper.
 - \`src/pages/\` — one file per route/view.
-- \`src/components/\` — shared UI: \`layout/\` for wrappers, \`ui/\` for primitives, feature subdirs.
+- \`src/components/\` — shared UI: \`layout/\` for Navbar/Footer/wrappers, \`ui/\` for primitives, feature subdirs.
 - \`src/stores/\` — Zustand stores, one per domain (e.g. \`useAppStore.ts\`).
 - \`src/data/\` — mock data and TypeScript types (\`types.ts\` + per-domain files).
 - \`src/hooks/\` — custom React hooks.
 
 ## Routing
 
-Uses react-router-dom v6 (BrowserRouter + Routes + Route). Current routes:
-- \`/\` — HomePage
-- \`/dashboard\` — DashboardPage
-- \`/settings\` — SettingsPage
+Uses react-router-dom v6 with **HashRouter** (reliable inside the preview iframe). Layout is a
+top navigation bar (not a sidebar) — the brand logo links to \`/\` and \`NavLink\`s switch pages.
+Current routes:
+- \`/\` — HomePage (hero + features)
+- \`/features\` — FeaturesPage
+- \`/about\` — AboutPage
+
+Use a sidebar layout ONLY when the product is genuinely an app dashboard/admin tool; otherwise
+keep the top-navbar + home-page shell.
 
 ## State
 
