@@ -1,11 +1,16 @@
 import Link from "next/link";
-import { Coins, FolderGit2, Github, Sparkles, Users } from "lucide-react";
-import { StatusBadge } from "@/components/platform/widgets";
+import { Bot, Coins, FolderGit2, Github, Sparkles, Users } from "lucide-react";
+import { StatusBadge, Panel } from "@/components/platform/widgets";
 import { ProjectCardActions } from "@/components/platform/project-card-actions";
 import { GitHubImportButton } from "@/components/platform/github-import-button";
 import { CollaborationRequests } from "@/components/platform/collaboration-requests";
+import { ActivityFeed } from "@/components/platform/activity-feed";
+import { DeployAgentButton } from "@/components/platform/deploy-agent-modal";
+import { AgentStatusBadge } from "@/components/platform/agent-controls";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import { getCreditsAccount, ensureCreditsAccount } from "@/lib/credits/server";
+import { listAgents, listActivity } from "@/lib/actions/agents";
+import { ROLE_PRESETS, type Agent, type ActivityEvent } from "@/lib/data/agents";
 import { redirect } from "next/navigation";
 import type { IncomingInvitation } from "@/lib/actions/collaborators";
 
@@ -34,34 +39,43 @@ export default async function DashboardPage() {
   let projects: Project[] = [];
   let sharedProjects: Project[] = [];
   let incomingInvitations: IncomingInvitation[] = [];
+  let agents: Agent[] = [];
+  let recentActivity: ActivityEvent[] = [];
 
   if (isSupabaseConfigured()) {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) redirect("/login");
 
-    // One parallel batch — projects, credits, shared projects, and pending
-    // invitations all fetched together. Supabase queries resolve (not throw) on
-    // error, so a missing table just yields null data instead of failing.
-    const [account, listResult, collabResult, inviteResult] = await Promise.all([
-      getCreditsAccount(user.id),
-      supabase
-        .from("projects")
-        .select("id, name, kind, status, updated_at")
-        .eq("user_id", user.id)
-        .order("updated_at", { ascending: false }),
-      supabase
-        .from("project_collaborators")
-        .select("project_id, projects(id, name, kind, status, updated_at)")
-        .eq("invited_user_id", user.id)
-        .eq("status", "accepted"),
-      supabase
-        .from("project_collaborators")
-        .select("id, project_id, project_name, invited_by_email, created_at")
-        .eq("invited_user_id", user.id)
-        .eq("status", "pending")
-        .order("created_at", { ascending: false }),
-    ]);
+    // One parallel batch — projects, credits, shared projects, pending
+    // invitations, agents, and activity all fetched together. Supabase queries
+    // resolve (not throw) on error, so a missing table just yields null data
+    // instead of failing (graceful before the agents migration is applied).
+    const [account, listResult, collabResult, inviteResult, agentList, activity] =
+      await Promise.all([
+        getCreditsAccount(user.id),
+        supabase
+          .from("projects")
+          .select("id, name, kind, status, updated_at")
+          .eq("user_id", user.id)
+          .order("updated_at", { ascending: false }),
+        supabase
+          .from("project_collaborators")
+          .select("project_id, projects(id, name, kind, status, updated_at)")
+          .eq("invited_user_id", user.id)
+          .eq("status", "accepted"),
+        supabase
+          .from("project_collaborators")
+          .select("id, project_id, project_name, invited_by_email, created_at")
+          .eq("invited_user_id", user.id)
+          .eq("status", "pending")
+          .order("created_at", { ascending: false }),
+        listAgents(),
+        listActivity({ limit: 8 }),
+      ]);
+
+    agents = agentList;
+    recentActivity = activity;
 
     // Brand-new user with no credits row yet — seed it in the background so the
     // page never blocks on a write.
@@ -97,13 +111,14 @@ export default async function DashboardPage() {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="font-serif text-[1.85rem] leading-tight text-dusk">
-            Your projects
+            Workspace
           </h1>
           <p className="mt-1.5 text-[13.5px] text-dusk-muted">
-            Pick up where you left off, or start something new with Astra.
+            Create projects and deploy AI agents to work on them.
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <DeployAgentButton projects={projects} variant="ghost" />
           <GitHubImportButton />
           <Link
             href="/dashboard/projects/new"
@@ -165,6 +180,10 @@ export default async function DashboardPage() {
 
       {/* Projects grid */}
       <section>
+        <div className="mb-4 flex items-center gap-2">
+          <FolderGit2 className="size-4 text-dusk-faint" />
+          <h2 className="font-serif text-[1.2rem] text-dusk">Projects</h2>
+        </div>
         {projects.length === 0 ? (
           <EmptyProjects />
         ) : (
@@ -175,6 +194,80 @@ export default async function DashboardPage() {
           </div>
         )}
       </section>
+
+      {/* Agents + activity */}
+      <div className="grid gap-6 lg:grid-cols-5">
+        <section className="lg:col-span-3">
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Bot className="size-4 text-dusk-faint" />
+              <h2 className="font-serif text-[1.2rem] text-dusk">Agents</h2>
+            </div>
+            {agents.length > 0 && (
+              <Link
+                href="/dashboard/agents"
+                className="text-[12.5px] text-dusk-muted transition-colors hover:text-dusk"
+              >
+                View all
+              </Link>
+            )}
+          </div>
+          {agents.length === 0 ? (
+            <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-carbon-line bg-carbon-raised py-12 text-center">
+              <Bot className="size-7 text-dusk-faint/40" />
+              <p className="mt-3 text-[13.5px] font-medium text-dusk">No agents deployed</p>
+              <p className="mt-1 max-w-[34ch] text-[12.5px] text-dusk-muted">
+                Deploy a research, developer, or QA agent to a project and it starts working.
+              </p>
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {agents.slice(0, 4).map((a) => {
+                const Icon = ROLE_PRESETS[a.role]?.icon ?? Bot;
+                return (
+                  <Link
+                    key={a.id}
+                    href={`/dashboard/agents/${a.id}`}
+                    className="flex items-start gap-3 rounded-xl border border-carbon-line bg-carbon-raised p-4 transition-all duration-150 hover:border-carbon-line-strong hover:bg-carbon-high/50"
+                  >
+                    <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-carbon-line bg-carbon">
+                      <Icon className="size-[18px] text-brass" strokeWidth={1.7} />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate text-[13.5px] font-medium text-dusk">
+                          {a.name}
+                        </span>
+                        <AgentStatusBadge status={a.status} />
+                      </div>
+                      <p className="mt-1 line-clamp-2 text-[12px] leading-relaxed text-dusk-muted">
+                        {a.goal ?? ROLE_PRESETS[a.role]?.defaultGoal}
+                      </p>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        <section className="lg:col-span-2">
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <h2 className="font-serif text-[1.2rem] text-dusk">Activity</h2>
+            {recentActivity.length > 0 && (
+              <Link
+                href="/dashboard/activity"
+                className="text-[12.5px] text-dusk-muted transition-colors hover:text-dusk"
+              >
+                View all
+              </Link>
+            )}
+          </div>
+          <Panel padded>
+            <ActivityFeed events={recentActivity} />
+          </Panel>
+        </section>
+      </div>
 
       {sharedProjects.length > 0 && (
         <section>

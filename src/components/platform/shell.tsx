@@ -7,7 +7,9 @@ import { UserMenu } from "@/components/auth/user-menu";
 import { cn } from "@/lib/utils";
 
 const navLinks = [
-  { href: "/dashboard", label: "Projects", exact: true },
+  { href: "/dashboard", label: "Workspace", exact: true },
+  { href: "/dashboard/agents", label: "Agents" },
+  { href: "/dashboard/activity", label: "Activity" },
   { href: "/dashboard/billing", label: "Billing" },
   { href: "/dashboard/integrations", label: "Integrations" },
 ];
