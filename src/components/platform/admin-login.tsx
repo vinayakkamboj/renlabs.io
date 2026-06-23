@@ -103,14 +103,13 @@ export function AdminLogin() {
     setPending(true);
     setError(null);
     try {
-      const supabase = createClient();
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: {
-          shouldCreateUser: false,
-        },
+      const res = await fetch("/api/auth/send-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
       });
-      if (error) throw error;
+      const data = (await res.json()) as { ok?: boolean; error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Could not send code.");
       setStep("otp-sent");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not send code.");

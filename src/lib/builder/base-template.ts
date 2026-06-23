@@ -58,7 +58,7 @@ const INDEX_HTML = `<!doctype html>
               ring: "hsl(var(--ring) / <alpha-value>)",
             },
             borderRadius: { lg: "var(--radius)", md: "calc(var(--radius) - 2px)", sm: "calc(var(--radius) - 4px)" },
-            fontFamily: { sans: ["Inter", "system-ui", "sans-serif"] },
+            fontFamily: { sans: ["Plus Jakarta Sans", "system-ui", "sans-serif"] },
           },
         },
       };
@@ -81,61 +81,62 @@ createRoot(document.getElementById("root")!).render(
   </React.StrictMode>
 );`;
 
-const INDEX_CSS = `@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+const INDEX_CSS = `@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap");
 
-/* Default design system — a clean, modern, minimalist palette: cool slate
-   neutrals with a single confident indigo accent. The build agent re-themes
-   these tokens during its design phase to fit each product. */
+/* Default design system — warm off-white background, near-black text, one
+   confident violet accent. The build agent re-themes these tokens during its
+   design phase. Components use semantic classes (bg-primary, text-foreground,
+   bg-card, border-border) — never hardcoded colors. */
 :root {
-  --background: 0 0% 100%;
-  --foreground: 222 47% 11%;
+  --background: 210 17% 98%;
+  --foreground: 220 30% 10%;
   --card: 0 0% 100%;
-  --card-foreground: 222 47% 11%;
+  --card-foreground: 220 30% 10%;
   --popover: 0 0% 100%;
-  --popover-foreground: 222 47% 11%;
-  --primary: 243 75% 59%;
+  --popover-foreground: 220 30% 10%;
+  --primary: 262 83% 60%;
   --primary-foreground: 0 0% 100%;
-  --secondary: 220 14% 96%;
-  --secondary-foreground: 222 39% 16%;
-  --muted: 220 14% 96%;
-  --muted-foreground: 220 9% 46%;
-  --accent: 226 100% 97%;
-  --accent-foreground: 243 75% 45%;
-  --destructive: 0 72% 51%;
+  --secondary: 210 14% 93%;
+  --secondary-foreground: 220 20% 20%;
+  --muted: 210 14% 93%;
+  --muted-foreground: 220 12% 48%;
+  --accent: 262 60% 95%;
+  --accent-foreground: 262 83% 48%;
+  --destructive: 0 78% 55%;
   --destructive-foreground: 0 0% 100%;
-  --border: 220 13% 91%;
-  --input: 220 13% 91%;
-  --ring: 243 75% 59%;
-  --radius: 0.625rem;
+  --border: 214 16% 88%;
+  --input: 214 16% 88%;
+  --ring: 262 83% 60%;
+  --radius: 0.75rem;
 }
 
 [data-theme="dark"] {
-  --background: 222 47% 7%;
-  --foreground: 210 20% 96%;
-  --card: 222 41% 10%;
-  --card-foreground: 210 20% 96%;
-  --popover: 222 41% 10%;
-  --popover-foreground: 210 20% 96%;
-  --primary: 245 80% 67%;
-  --primary-foreground: 222 47% 7%;
-  --secondary: 222 30% 16%;
-  --secondary-foreground: 210 20% 96%;
-  --muted: 222 30% 16%;
-  --muted-foreground: 215 16% 62%;
-  --accent: 222 33% 18%;
-  --accent-foreground: 245 80% 80%;
-  --destructive: 0 72% 56%;
-  --destructive-foreground: 210 20% 96%;
-  --border: 222 25% 20%;
-  --input: 222 25% 20%;
-  --ring: 245 80% 67%;
+  --background: 220 25% 8%;
+  --foreground: 220 15% 94%;
+  --card: 220 22% 11%;
+  --card-foreground: 220 15% 94%;
+  --popover: 220 22% 11%;
+  --popover-foreground: 220 15% 94%;
+  --primary: 262 85% 68%;
+  --primary-foreground: 220 25% 8%;
+  --secondary: 220 18% 16%;
+  --secondary-foreground: 220 15% 94%;
+  --muted: 220 18% 16%;
+  --muted-foreground: 220 12% 55%;
+  --accent: 262 30% 22%;
+  --accent-foreground: 262 85% 78%;
+  --destructive: 0 75% 60%;
+  --destructive-foreground: 220 15% 94%;
+  --border: 220 18% 20%;
+  --input: 220 18% 20%;
+  --ring: 262 85% 68%;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; border-color: hsl(var(--border)); }
 html, body { width: 100%; height: 100%; }
 #root { width: 100%; height: 100%; display: flex; flex-direction: column; }
 body {
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   background: hsl(var(--background));
   color: hsl(var(--foreground));
   -webkit-font-smoothing: antialiased;
@@ -149,7 +150,7 @@ export function cn(...inputs: ClassValue[]) {
 }`;
 
 const APP_TSX = `import { HashRouter, Routes, Route, NavLink, Link } from "react-router-dom";
-import { Sparkles, ArrowRight, Zap, Shield, Layers } from "lucide-react";
+import { ArrowRight, Zap, Shield, Layers, BarChart2 } from "lucide-react";
 import { cn } from "./lib/utils";
 
 const NAV = [
@@ -158,17 +159,23 @@ const NAV = [
   { to: "/about", label: "About" },
 ];
 
+function Logo() {
+  return (
+    <Link to="/" className="flex items-center gap-2.5">
+      <span className="flex size-7 items-center justify-center rounded-lg bg-primary">
+        <BarChart2 className="size-4 text-primary-foreground" strokeWidth={2.5} />
+      </span>
+      <span className="text-[15px] font-bold tracking-tight text-foreground">Acme</span>
+    </Link>
+  );
+}
+
 function Navbar() {
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur-md">
+    <header className="sticky top-0 z-40 border-b border-border bg-background/90 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
-        <Link to="/" className="flex items-center gap-2">
-          <span className="flex size-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <Sparkles className="size-4" />
-          </span>
-          <span className="text-[15px] font-semibold tracking-tight text-foreground">Acme</span>
-        </Link>
-        <nav className="flex items-center gap-1">
+        <Logo />
+        <nav className="hidden items-center gap-0.5 md:flex">
           {NAV.map(({ to, label }) => (
             <NavLink
               key={to}
@@ -176,10 +183,8 @@ function Navbar() {
               end={to === "/"}
               className={({ isActive }) =>
                 cn(
-                  "rounded-lg px-3 py-1.5 text-sm font-medium transition-colors",
-                  isActive
-                    ? "text-foreground"
-                    : "text-muted-foreground hover:text-foreground",
+                  "rounded-lg px-3.5 py-1.5 text-[13.5px] font-medium transition-colors",
+                  isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground",
                 )
               }
             >
@@ -187,9 +192,17 @@ function Navbar() {
             </NavLink>
           ))}
         </nav>
-        <button className="hidden items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90 sm:inline-flex">
-          Get started
-        </button>
+        <div className="flex items-center gap-2.5">
+          <Link
+            to="/about"
+            className="hidden text-[13.5px] font-medium text-muted-foreground transition-colors hover:text-foreground md:block"
+          >
+            Sign in
+          </Link>
+          <button className="rounded-lg bg-primary px-4 py-2 text-[13.5px] font-semibold text-primary-foreground transition-opacity hover:opacity-90">
+            Get started
+          </button>
+        </div>
       </div>
     </header>
   );
@@ -198,9 +211,15 @@ function Navbar() {
 function Footer() {
   return (
     <footer className="border-t border-border">
-      <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-3 px-6 py-8 text-sm text-muted-foreground sm:flex-row">
-        <span>© {new Date().getFullYear()} Acme. All rights reserved.</span>
-        <div className="flex items-center gap-5">
+      <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 py-10 text-[13px] text-muted-foreground sm:flex-row">
+        <div className="flex items-center gap-2">
+          <span className="flex size-5 items-center justify-center rounded bg-primary">
+            <BarChart2 className="size-3 text-primary-foreground" strokeWidth={2.5} />
+          </span>
+          <span className="font-semibold text-foreground">Acme</span>
+          <span className="ml-2">© {new Date().getFullYear()}</span>
+        </div>
+        <div className="flex items-center gap-6">
           <Link to="/features" className="transition-colors hover:text-foreground">Features</Link>
           <Link to="/about" className="transition-colors hover:text-foreground">About</Link>
         </div>
@@ -210,44 +229,50 @@ function Footer() {
 }
 
 const FEATURES = [
-  { icon: Zap, title: "Fast by default", body: "Built for speed, so everything feels instant from the first interaction." },
-  { icon: Shield, title: "Secure & private", body: "Your data stays yours. Sensible defaults that protect by design." },
-  { icon: Layers, title: "Composable", body: "Clean building blocks that fit together however your product needs." },
+  { icon: Zap, title: "Instant performance", body: "Every interaction is fast. No loading spinners, no wasted time." },
+  { icon: Shield, title: "Built-in security", body: "Designed secure from day one — sensible defaults, no config required." },
+  { icon: Layers, title: "Fully composable", body: "Modular building blocks that fit together exactly how your product needs." },
 ];
 
 function HomePage() {
   return (
     <>
-      <section className="mx-auto max-w-6xl px-6 py-24 text-center">
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
-          <Sparkles className="size-3 text-primary" /> Now in early access
-        </span>
-        <h1 className="mx-auto mt-6 max-w-3xl text-5xl font-semibold tracking-tight text-foreground">
-          The starting point for whatever you want to build.
-        </h1>
-        <p className="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-muted-foreground">
-          Describe your idea and Ren Code shapes it into a real product — pages, navigation,
-          state, and a design that fits.
+      <section className="mx-auto max-w-6xl px-6 pb-12 pt-28 text-center">
+        <p className="text-[13px] font-semibold uppercase tracking-widest text-primary">
+          Now in early access
         </p>
-        <div className="mt-9 flex items-center justify-center gap-3">
-          <button className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90">
-            Get started <ArrowRight className="size-4" />
+        <h1 className="mx-auto mt-5 max-w-3xl text-[3.25rem] font-extrabold leading-[1.1] tracking-tight text-foreground">
+          The foundation for whatever you want to build.
+        </h1>
+        <p className="mx-auto mt-6 max-w-lg text-[17px] leading-relaxed text-muted-foreground">
+          Describe your idea and Ren Code turns it into a complete, working product
+          — pages, navigation, state, and a design that fits.
+        </p>
+        <div className="mt-10 flex items-center justify-center gap-3">
+          <button className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-[14px] font-semibold text-primary-foreground transition-opacity hover:opacity-90">
+            Get started free <ArrowRight className="size-4" />
           </button>
-          <Link to="/features" className="rounded-lg border border-border px-5 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-secondary">
+          <Link
+            to="/features"
+            className="rounded-xl border border-border px-6 py-3 text-[14px] font-semibold text-foreground transition-colors hover:bg-secondary"
+          >
             See features
           </Link>
         </div>
       </section>
 
-      <section className="mx-auto max-w-6xl px-6 pb-24">
-        <div className="grid gap-5 sm:grid-cols-3">
+      <section className="mx-auto max-w-6xl px-6 pb-28">
+        <div className="grid gap-4 sm:grid-cols-3">
           {FEATURES.map(({ icon: Icon, title, body }) => (
-            <div key={title} className="rounded-2xl border border-border bg-card p-6">
-              <div className="flex size-10 items-center justify-center rounded-xl bg-primary/10">
+            <div
+              key={title}
+              className="rounded-2xl border border-border bg-card p-7 transition-shadow hover:shadow-sm"
+            >
+              <div className="flex size-11 items-center justify-center rounded-xl bg-primary/10">
                 <Icon className="size-5 text-primary" />
               </div>
-              <h3 className="mt-4 text-base font-semibold text-foreground">{title}</h3>
-              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{body}</p>
+              <h3 className="mt-5 text-[15px] font-bold text-foreground">{title}</h3>
+              <p className="mt-2 text-[13.5px] leading-relaxed text-muted-foreground">{body}</p>
             </div>
           ))}
         </div>
@@ -258,20 +283,20 @@ function HomePage() {
 
 function FeaturesPage() {
   return (
-    <section className="mx-auto max-w-6xl px-6 py-20">
-      <h1 className="text-3xl font-semibold tracking-tight text-foreground">Features</h1>
-      <p className="mt-3 max-w-xl text-muted-foreground">
+    <section className="mx-auto max-w-5xl px-6 py-20">
+      <h1 className="text-[2rem] font-extrabold tracking-tight text-foreground">Features</h1>
+      <p className="mt-3 max-w-lg text-[15px] leading-relaxed text-muted-foreground">
         Everything you need, nothing you don't. Replace this with the real capabilities of your product.
       </p>
-      <div className="mt-10 grid gap-5 sm:grid-cols-2">
+      <div className="mt-12 grid gap-4 sm:grid-cols-2">
         {FEATURES.map(({ icon: Icon, title, body }) => (
-          <div key={title} className="flex gap-4 rounded-2xl border border-border bg-card p-6">
-            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10">
+          <div key={title} className="flex gap-5 rounded-2xl border border-border bg-card p-6">
+            <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10">
               <Icon className="size-5 text-primary" />
             </div>
             <div>
-              <h3 className="text-base font-semibold text-foreground">{title}</h3>
-              <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">{body}</p>
+              <h3 className="text-[15px] font-bold text-foreground">{title}</h3>
+              <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted-foreground">{body}</p>
             </div>
           </div>
         ))}
@@ -282,12 +307,12 @@ function FeaturesPage() {
 
 function AboutPage() {
   return (
-    <section className="mx-auto max-w-3xl px-6 py-20">
-      <h1 className="text-3xl font-semibold tracking-tight text-foreground">About</h1>
-      <p className="mt-5 text-lg leading-relaxed text-muted-foreground">
-        This is a starter home page with a working top navigation bar. Tell Ren Code what you want to
-        build and it will reshape this into your product — a landing page, a SaaS app, a marketplace,
-        a tool, a dashboard, whatever fits.
+    <section className="mx-auto max-w-2xl px-6 py-20">
+      <h1 className="text-[2rem] font-extrabold tracking-tight text-foreground">About</h1>
+      <p className="mt-5 text-[16px] leading-relaxed text-muted-foreground">
+        This is a starter with a top navigation bar and working multi-page routing. Tell Ren Code
+        what you want to build and it will reshape this into your product — a landing page, a SaaS
+        app, a marketplace, a tool, a dashboard, whatever fits.
       </p>
     </section>
   );
