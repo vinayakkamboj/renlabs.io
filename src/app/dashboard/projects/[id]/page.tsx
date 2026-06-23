@@ -2,16 +2,17 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { redirect } from "next/navigation";
-import { ArrowRight, ArrowLeft, Bot, Calendar, FileText, FolderGit2, GitBranch } from "lucide-react";
+import { ArrowRight, ArrowLeft, Calendar, Database, FileText, FolderGit2, GitBranch } from "lucide-react";
 import { PageHeader, Panel, StatusBadge } from "@/components/platform/widgets";
-import { AgentStatusBadge } from "@/components/platform/agent-controls";
 import { DeployAgentButton } from "@/components/platform/deploy-agent-modal";
+import { ProjectAgentList } from "@/components/platform/project-agent-list";
+import { SupabaseConnect } from "@/components/platform/supabase-connect";
 import { TaskQueue } from "@/components/platform/task-queue";
 import { GoalsEditor } from "@/components/platform/goals-editor";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import { deleteProject } from "@/lib/actions/projects";
 import { listAgents, listTasks, listReports } from "@/lib/actions/agents";
-import { ROLE_PRESETS } from "@/lib/data/agents";
+import { getSupabaseIntegration, getSupabaseSchema } from "@/lib/actions/integrations";
 
 export const metadata: Metadata = { title: "Project" };
 
@@ -98,6 +99,15 @@ export default async function ProjectDetailPage({ params }: PageProps) {
     (goalsRow.data?.goals as string[] | undefined) ?? [];
   const projectOption = [{ id: project.id, name: project.name }];
 
+  // Per-project Supabase backend. The service-role key is never returned here —
+  // getSupabaseIntegration only reports whether one is stored.
+  const supabaseIntegration = await getSupabaseIntegration(project.id);
+  const supabaseSchema = supabaseIntegration
+    ? await getSupabaseSchema(project.id)
+    : null;
+  const supabaseTables =
+    supabaseSchema?.ok ? (supabaseSchema.tables ?? null) : null;
+
   const createdAt = new Date(project.created_at).toLocaleDateString("en-US", {
     year: "numeric",
     month: "long",
@@ -128,7 +138,6 @@ export default async function ProjectDetailPage({ params }: PageProps) {
         action={
           <div className="flex items-center gap-3">
             <StatusBadge status={project.status} />
-            <DeployAgentButton projects={projectOption} defaultProjectId={project.id} variant="ghost" />
             <Link
               href={`/workspace/${project.id}`}
               className="flex h-9 items-center gap-2 rounded-lg bg-brass px-4 text-[12.5px] font-medium text-carbon transition-colors duration-200 hover:bg-brass-deep"
@@ -145,43 +154,50 @@ export default async function ProjectDetailPage({ params }: PageProps) {
         <GoalsEditor projectId={project.id} initialGoals={goals} />
       </Panel>
 
-      {/* Active agents + task queue */}
+      {/* Agents (per-project) + task queue */}
       <div className="mb-4 grid gap-4 lg:grid-cols-2">
         <Panel
-          title="Active agents"
-          meta={<span className="text-[11.5px] text-dusk-faint">{agents.length}</span>}
+          title="Agents"
+          meta={
+            <div className="flex items-center gap-3">
+              <span className="text-[11.5px] text-dusk-faint">{agents.length}</span>
+              <DeployAgentButton
+                projects={projectOption}
+                defaultProjectId={project.id}
+                variant="ghost"
+              />
+            </div>
+          }
         >
-          {agents.length === 0 ? (
-            <p className="py-4 text-center text-[13px] text-dusk-faint">
-              No agents on this project yet. Deploy one to start work.
-            </p>
-          ) : (
-            <ul className="space-y-2.5">
-              {agents.map((a) => {
-                const Icon = ROLE_PRESETS[a.role]?.icon ?? Bot;
-                return (
-                  <li key={a.id}>
-                    <Link
-                      href={`/dashboard/agents/${a.id}`}
-                      className="flex items-center gap-3 rounded-lg border border-carbon-line bg-carbon p-3 transition-colors hover:border-carbon-line-strong"
-                    >
-                      <Icon className="size-4 shrink-0 text-brass" strokeWidth={1.7} />
-                      <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-dusk">
-                        {a.name}
-                      </span>
-                      <AgentStatusBadge status={a.status} />
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+          <ProjectAgentList agents={agents} />
         </Panel>
 
         <Panel title="Task queue">
           <TaskQueue projectId={project.id} tasks={tasks} />
         </Panel>
       </div>
+
+      {/* Backend — this project's own Supabase connection */}
+      <Panel
+        className="mb-4"
+        title={
+          <span className="flex items-center gap-2">
+            <Database className="size-3.5 text-brass" />
+            Backend (Supabase)
+          </span>
+        }
+        meta={
+          <span className="text-[11.5px] text-dusk-faint">
+            {supabaseIntegration ? "Connected" : "Not connected"}
+          </span>
+        }
+      >
+        <SupabaseConnect
+          projectId={project.id}
+          integration={supabaseIntegration}
+          initialTables={supabaseTables}
+        />
+      </Panel>
 
       {/* Recent reports */}
       <Panel

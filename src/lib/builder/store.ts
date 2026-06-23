@@ -53,9 +53,25 @@ interface WorkspaceState {
   updateFileContent: (path: string, content: string) => void;
   refreshViewer: () => void;
   sendMessage: (text: string, images?: string[]) => Promise<void>;
+  /** Abort an in-flight build. Stops the stream and leaves files untouched. */
+  stopBuild: () => void;
 }
 
 const LS_PREFIX = "ren-workspace:";
+
+/**
+ * The AbortController for the in-flight build, kept at module scope (not in
+ * React/zustand state) so the fetch can be cancelled without triggering a
+ * re-render. `stopBuild` aborts it; `sendMessage` creates a fresh one per run.
+ */
+let buildAbortController: AbortController | null = null;
+
+/** True when a thrown/caught error is the result of a user-initiated abort. */
+function isAbortError(e: unknown): boolean {
+  return (
+    e instanceof DOMException && e.name === "AbortError"
+  ) || (e instanceof Error && e.name === "AbortError");
+}
 
 function persist(projectId: string, files: ProjectFile[], messages: BuildMessage[]) {
   try {
@@ -181,9 +197,25 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   refreshViewer: () => set((s) => ({ viewerKey: s.viewerKey + 1 })),
 
+  stopBuild: () => {
+    if (!get().isBuilding) return;
+    buildAbortController?.abort();
+    buildAbortController = null;
+    set({
+      isBuilding: false,
+      phase: "idle",
+      streamingText: "",
+      error: null,
+    });
+  },
+
   sendMessage: async (text, images) => {
     const trimmed = text.trim();
     if ((!trimmed && !images?.length) || get().isBuilding) return;
+
+    // Fresh abort controller for this run; stopBuild() aborts it.
+    const controller = new AbortController();
+    buildAbortController = controller;
 
     const userMsg: BuildMessage = {
       id: newId(),
@@ -207,6 +239,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       const res = await fetch("/api/builder", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           messages: messages.map((m) => ({ role: m.role, content: m.content })),
           projectFiles,
@@ -355,8 +388,28 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           ? "src/App.tsx"
           : (changedPaths[0] ?? s.activeFile),
       }));
+      buildAbortController = null;
       persist(get().projectId, nextFiles, get().messages);
     } catch (e) {
+      // User pressed Stop — exit quietly, leave files as they were, no error
+      // bubble and crucially no repair retry (the loop already unwound).
+      if (isAbortError(e)) {
+        const stoppedMsg: BuildMessage = {
+          id: newId(),
+          role: "assistant",
+          content: "Stopped. Your files are unchanged — send a new instruction whenever you're ready.",
+          createdAt: new Date().toISOString(),
+        };
+        set((s) => ({
+          messages: [...s.messages, stoppedMsg],
+          isBuilding: false,
+          phase: "idle",
+          streamingText: "",
+          error: null,
+        }));
+        buildAbortController = null;
+        return;
+      }
       const reason = describeBuildError(e);
       const assistantMsg: BuildMessage = {
         id: newId(),
@@ -371,6 +424,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         streamingText: "",
         error: reason,
       }));
+      buildAbortController = null;
     }
   },
 }));

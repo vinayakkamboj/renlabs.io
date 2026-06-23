@@ -186,11 +186,33 @@ export async function POST(req: Request) {
     await sendBrevoEmail(email, code);
   } catch (sendErr) {
     const msg = sendErr instanceof Error ? sendErr.message : String(sendErr);
-    console.error("[send-otp] Email delivery failed:", msg);
-    // For admin callers, surface the real Brevo reason
+    console.error("[send-otp] Brevo delivery failed:", msg);
+
+    // Brevo is unreliable from serverless (rotating IPs hit its "Authorised IPs"
+    // wall). Rather than block admin sign-in on a third-party email setting, fall
+    // back to Supabase's own OTP mailer — it sends a fresh 6-digit code that the
+    // same verify step accepts. This keeps admin login working out of the box.
+    const fallback = await supabase.auth.signInWithOtp({
+      email,
+      options: { shouldCreateUser: false },
+    });
+
+    if (!fallback.error) {
+      console.log("[send-otp] Delivered via Supabase fallback after Brevo failed.");
+      return NextResponse.json({ ok: true, via: "supabase" });
+    }
+
+    console.error("[send-otp] Supabase fallback also failed:", fallback.error.message);
     if (ADMIN_EMAILS.includes(email)) {
       return NextResponse.json(
-        { error: `Email delivery failed — ${msg}` },
+        {
+          error:
+            `Email delivery failed. Brevo: ${msg}. ` +
+            `Supabase fallback: ${fallback.error.message}. ` +
+            `Fix: in Brevo → Settings → Security → Authorised IPs, DISABLE the IP ` +
+            `restriction (serverless IPs rotate), or configure SMTP in Supabase ` +
+            `(Auth → Email).`,
+        },
         { status: 502 },
       );
     }

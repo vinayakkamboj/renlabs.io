@@ -47,8 +47,8 @@ export default async function WorkspacePage({ params }: PageProps) {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // Fetch project, saved files, and Supabase integration in parallel.
-  const supabaseIntegration = await getSupabaseIntegration();
+  // Fetch project, saved files, and this project's Supabase integration.
+  const supabaseIntegration = await getSupabaseIntegration(id);
 
   const [projectResult, savedResult] = await Promise.all([
     supabase

@@ -24,11 +24,13 @@ import {
 import { cn } from "@/lib/utils";
 
 interface Props {
+  /** The project this Supabase backend is attached to. */
+  projectId: string;
   integration: SupabaseIntegration | null;
   initialTables: TableInfo[] | null;
 }
 
-export function SupabaseConnect({ integration, initialTables }: Props) {
+export function SupabaseConnect({ projectId, integration, initialTables }: Props) {
   const router = useRouter();
   const [saving, startSave] = useTransition();
   const [deleting, startDelete] = useTransition();
@@ -51,6 +53,7 @@ export function SupabaseConnect({ integration, initialTables }: Props) {
     }
     startSave(async () => {
       const res = await saveSupabaseIntegration({
+        projectId,
         projectUrl: url,
         anonKey,
         serviceRoleKey: serviceKey,
@@ -66,7 +69,7 @@ export function SupabaseConnect({ integration, initialTables }: Props) {
 
   function disconnect() {
     startDelete(async () => {
-      const res = await deleteSupabaseIntegration();
+      const res = await deleteSupabaseIntegration(projectId);
       if (res.ok) {
         setTables(null);
         toast.success("Integration removed.");
@@ -79,7 +82,7 @@ export function SupabaseConnect({ integration, initialTables }: Props) {
 
   function refreshSchema() {
     startRefresh(async () => {
-      const res = await getSupabaseSchema();
+      const res = await getSupabaseSchema(projectId);
       if (res.ok && res.tables) {
         setTables(res.tables);
         toast.success("Schema refreshed.");
