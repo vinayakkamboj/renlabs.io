@@ -137,13 +137,29 @@ export async function POST(req: Request) {
 
   if (error) {
     console.error("[send-otp] generateLink error:", error.message);
-    // Return success to avoid leaking whether the email exists
+    // For admin callers, surface real error detail; others get generic response
+    if (ADMIN_EMAILS.includes(email)) {
+      return NextResponse.json(
+        { error: `Could not generate a code: ${error.message}` },
+        { status: 500 },
+      );
+    }
     return NextResponse.json({ ok: true });
   }
 
   const code = data.properties?.email_otp;
   if (!code) {
     console.error("[send-otp] No email_otp in generateLink response");
+    // For admin callers, surface real diagnostic
+    if (ADMIN_EMAILS.includes(email)) {
+      return NextResponse.json(
+        {
+          error:
+            "Supabase did not return an OTP. Ensure email OTP is enabled for this project (Auth → Providers → Email).",
+        },
+        { status: 500 },
+      );
+    }
     return NextResponse.json({ ok: true });
   }
 
@@ -152,6 +168,13 @@ export async function POST(req: Request) {
   } catch (sendErr) {
     const msg = sendErr instanceof Error ? sendErr.message : String(sendErr);
     console.error("[send-otp] Email delivery failed:", msg);
+    // For admin callers, surface the real Brevo reason
+    if (ADMIN_EMAILS.includes(email)) {
+      return NextResponse.json(
+        { error: `Email delivery failed — ${msg}` },
+        { status: 502 },
+      );
+    }
     return NextResponse.json(
       { error: "Failed to send the code. Please try again." },
       { status: 502 },
