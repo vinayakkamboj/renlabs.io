@@ -19,6 +19,7 @@ const NAV = [
   { href: "/admin/projects", label: "Projects", exact: false, fullOnly: true  },
   { href: "/admin/payments", label: "Payments", exact: false, fullOnly: true  },
   { href: "/admin/audit",    label: "Audit",    exact: false, fullOnly: true  },
+  { href: "/admin/security", label: "Security", exact: false, fullOnly: false },
 ];
 
 export function AdminShell({

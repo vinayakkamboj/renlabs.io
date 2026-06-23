@@ -73,7 +73,7 @@ src/
 
 const PROTOCOL = `## OUTPUT PROTOCOL — file_patches (REQUIRED)
 
-Your response MUST contain exactly one \`<file_patches>\` block and nothing else of substance. Do NOT emit \`<thinking>\` tags, chain-of-thought, planning notes, or any prose before or after — start your reply directly with the \`<file_patches>\` block. Do your reasoning silently; the user only sees the one-line \`plan\` field and the files. Long reasoning wastes the token budget and causes files to truncate.
+Your response MUST contain exactly one \`<file_patches>\` block. Do NOT emit \`<thinking>\` tags, chain-of-thought, planning notes, or any prose before or after the block. Start your response immediately with \`<file_patches>\`. Without the \`<file_patches>\` block, no files will be saved and the app will not build.
 
 \`\`\`
 <file_patches>
@@ -92,9 +92,10 @@ Your response MUST contain exactly one \`<file_patches>\` block and nothing else
 </file_patches>
 \`\`\`
 
-### \`changes\` vs \`edits\` — choose the cheaper tool (IMPORTANT)
-- Use **\`edits\`** (surgical find/replace) for small, localized changes to an EXISTING file — adding a prop, changing a className, inserting a section. This is the default for edits and saves tokens: you only write what changes, not the whole file.
-- Use **\`changes\`** (full file) only for NEW files, or when more than ~40% of an existing file changes.
+### \`changes\` vs \`edits\` — choose the right tool
+- Use **\`changes\`** (full file) for: NEW files, first-build files, or when more than ~40% of an existing file changes.
+- Use **\`edits\`** (surgical find/replace) ONLY for small, localized changes to existing files in FOLLOW-UP builds — adding a prop, fixing a bug. Never use \`edits\` on a first build.
+- On a first build, EVERY file must be in \`changes\` with complete content. No \`edits\` on first builds — they will fail silently if the find text doesn't match.
 - An \`edit\`'s \`find\` MUST be an EXACT, VERBATIM substring copied from the current file (the files are provided to you), including whitespace, and it must be UNIQUE in that file — include 2–4 surrounding lines so there's exactly one match. If you're unsure it's unique, rewrite the whole file via \`changes\` instead.
 - Never target the same path with both a \`change\` and an \`edit\` in one response.
 
@@ -190,6 +191,7 @@ Architect the FULL product the user described:
 5. **Populate with real mock data** in \`src/data/\` — typed arrays, realistic content, no lorem ipsum.
 6. **Target 8–14 files** for a real first build: thin App.tsx, themed index.css, 3–6 pages, 3–5 shared components, 1–2 stores, 1–2 data files, updated \`${PROJECT_MEMORY_FILE}\`. Finish every file completely — never start more files than you can complete.
 7. **Every screen looks done** — no "coming soon" placeholders, no dead buttons, no empty states without a design for them.
+8. **All files in \`changes\` — never \`edits\` on a first build.** Every file (App.tsx, index.css, pages, components, stores, data) must appear as a complete entry in \`changes\`. Do not use \`edits\` at all. Rewrite any existing file fully in \`changes\`.
 
 Build the real product. Do not ship a static hero page with placeholder text.`;
 }

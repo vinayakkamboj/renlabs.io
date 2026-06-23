@@ -321,6 +321,15 @@ export function detectFatalIssues(
     return issues;
   }
 
+  // First builds must have full-file changes (not just edits). Edits silently
+  // fail when the find text doesn't match the seeded template exactly.
+  if (isFirstBuild && plan.changes.length < 3) {
+    issues.push({
+      type: "no-changes",
+      detail: `First build produced only ${plan.changes.length} full file(s) — expected at least 3 complete \`changes\` entries (App.tsx, index.css, and at least one page). Do not use \`edits\` on first builds; rewrite every file via \`changes\`.`,
+    });
+  }
+
   for (const change of plan.changes) {
     if (!isSafePath(change.path)) {
       issues.push({

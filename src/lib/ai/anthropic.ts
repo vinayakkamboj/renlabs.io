@@ -93,32 +93,41 @@ export function anthropicSseToText(
   const encoder = new TextEncoder();
   let buffer = "";
 
+  function processLine(line: string, controller: TransformStreamDefaultController<Uint8Array>) {
+    const data = line.trim();
+    if (!data.startsWith("data:")) return;
+    const payload = data.slice(5).trim();
+    if (!payload || payload === "[DONE]") return;
+    try {
+      const json = JSON.parse(payload) as {
+        type?: string;
+        delta?: { type?: string; text?: string };
+      };
+      if (
+        json.type === "content_block_delta" &&
+        json.delta?.type === "text_delta" &&
+        json.delta.text
+      ) {
+        controller.enqueue(encoder.encode(json.delta.text));
+      }
+    } catch {
+      // Partial JSON across a chunk boundary — wait for the rest.
+    }
+  }
+
   return upstream.pipeThrough(
     new TransformStream<Uint8Array, Uint8Array>({
       transform(chunk, controller) {
         buffer += decoder.decode(chunk, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          const data = line.trim();
-          if (!data.startsWith("data:")) continue;
-          const payload = data.slice(5).trim();
-          if (!payload || payload === "[DONE]") continue;
-          try {
-            const json = JSON.parse(payload) as {
-              type?: string;
-              delta?: { type?: string; text?: string };
-            };
-            if (
-              json.type === "content_block_delta" &&
-              json.delta?.type === "text_delta" &&
-              json.delta.text
-            ) {
-              controller.enqueue(encoder.encode(json.delta.text));
-            }
-          } catch {
-            // Partial JSON across a chunk boundary — wait for the rest.
-          }
+        for (const line of lines) processLine(line, controller);
+      },
+      flush(controller) {
+        // Process any remaining buffered content when the stream ends.
+        if (buffer) {
+          processLine(buffer, controller);
+          buffer = "";
         }
       },
     }),
