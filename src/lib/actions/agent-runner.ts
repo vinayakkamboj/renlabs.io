@@ -11,7 +11,7 @@ import {
 import { buildEditPrompt, buildRepairPrompt } from "@/lib/builder/prompts";
 import { logActivity, setTaskStatus } from "./agents";
 import { ROLE_PRESETS } from "@/lib/data/agents";
-import type { Agent, AgentTask } from "@/lib/data/agents";
+import type { Agent, AgentTask, TaskStatus, TaskPriority } from "@/lib/data/agents";
 import type { ProjectFile } from "@/lib/builder/types";
 
 export interface RunAgentTaskResult {
@@ -23,6 +23,7 @@ export interface RunAgentTaskResult {
 }
 
 interface AgentContext {
+  userId: string;
   agent: Agent;
   project: { id: string; name: string };
   task: AgentTask | null;
@@ -33,21 +34,37 @@ interface AgentContext {
 async function loadContext(agentId: string, taskId?: string): Promise<AgentContext | null> {
   const supabase = createAdminClient();
 
-  const { data: agent, error: agentError } = await supabase
+  const { data: agentRow, error: agentError } = await supabase
     .from("agents")
     .select("*")
     .eq("id", agentId)
     .single();
 
-  if (agentError || !agent) return null;
+  if (agentError || !agentRow) return null;
+
+  const userId = agentRow.user_id as string;
 
   const { data: project, error: projectError } = await supabase
     .from("projects")
     .select("id, name")
-    .eq("id", agent.project_id)
+    .eq("id", agentRow.project_id)
     .single();
 
   if (projectError || !project) return null;
+
+  // Helper to map task rows to AgentTask
+  const mapTask = (row: Record<string, unknown>): AgentTask => ({
+    id: row.id as string,
+    projectId: row.project_id as string,
+    agentId: (row.agent_id as string) || null,
+    title: row.title as string,
+    detail: (row.detail as string) || null,
+    status: row.status as TaskStatus,
+    priority: row.priority as TaskPriority,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+    completedAt: (row.completed_at as string) || null,
+  });
 
   // Pick a task: if taskId provided, use it; else find first queued task assigned to this agent
   let task: AgentTask | null = null;
@@ -56,67 +73,56 @@ async function loadContext(agentId: string, taskId?: string): Promise<AgentConte
       .from("agent_tasks")
       .select("*")
       .eq("id", taskId)
-      .eq("agent_id", agent.id)
+      .eq("agent_id", agentId)
       .single();
-    task = specificTask || null;
+    task = specificTask ? mapTask(specificTask) : null;
   } else {
     const { data: tasks } = await supabase
       .from("agent_tasks")
       .select("*")
-      .eq("agent_id", agent.id)
+      .eq("agent_id", agentId)
       .eq("status", "queued")
       .order("priority", { ascending: false })
       .order("created_at", { ascending: true })
       .limit(1);
-    task = tasks?.[0] || null;
+    task = tasks?.[0] ? mapTask(tasks[0]) : null;
   }
 
   // Load project files
   const { data: files, error: filesError } = await supabase
     .from("project_files")
     .select("id, path, content, language")
-    .eq("project_id", agent.project_id)
+    .eq("project_id", agentRow.project_id)
     .order("path");
 
   if (filesError) return null;
 
   return {
     agent: {
-      id: agent.id,
-      projectId: agent.project_id,
-      name: agent.name,
-      role: agent.role,
-      goal: agent.goal,
-      status: agent.status,
-      schedule: agent.schedule ?? "manual",
-      budgetCents: agent.budget_cents ?? 0,
-      spentCents: agent.spent_cents ?? 0,
-      permissions: agent.permissions ?? [],
-      lastRunAt: agent.last_run_at,
-      createdAt: agent.created_at,
-      updatedAt: agent.updated_at,
+      id: agentRow.id,
+      projectId: agentRow.project_id,
+      name: agentRow.name,
+      role: agentRow.role,
+      goal: agentRow.goal,
+      status: agentRow.status,
+      schedule: agentRow.schedule ?? "manual",
+      budgetCents: agentRow.budget_cents ?? 0,
+      spentCents: agentRow.spent_cents ?? 0,
+      permissions: agentRow.permissions ?? [],
+      lastRunAt: agentRow.last_run_at,
+      createdAt: agentRow.created_at,
+      updatedAt: agentRow.updated_at,
     },
     project: { id: project.id, name: project.name },
-    task: task
-      ? {
-          id: task.id,
-          projectId: task.project_id,
-          agentId: task.agent_id,
-          title: task.title,
-          detail: task.detail,
-          status: task.status,
-          priority: task.priority,
-          createdAt: task.created_at,
-          updatedAt: task.updated_at,
-          completedAt: task.completed_at,
-        }
-      : null,
+    task,
     files: files || [],
+    userId,
     supabase,
   };
 }
 
 async function saveFiles(
+  userId: string,
   projectId: string,
   files: ProjectFile[],
   supabase: ReturnType<typeof createAdminClient>,
@@ -125,6 +131,7 @@ async function saveFiles(
     for (const file of files) {
       await supabase.from("project_files").upsert(
         {
+          user_id: userId,
           project_id: projectId,
           path: file.path,
           content: file.content,
@@ -209,7 +216,7 @@ async function executeAgent(ctx: AgentContext): Promise<{
   const messages = await buildPrompt(ctx);
   const systemPrompt = buildEditPrompt();
 
-  let response = await streamAstraText([
+  const response = await streamAstraText([
     { role: "system", content: systemPrompt },
     ...messages,
   ]);
@@ -230,7 +237,7 @@ async function executeAgent(ctx: AgentContext): Promise<{
 
   // Apply patches to create modified file list
   const modified = applyPatchPlan(ctx.files, plan);
-  let issues = detectFatalIssues(modified);
+  let issues = detectFatalIssues(plan, modified, false);
 
   // One automatic repair pass
   if (issues.length > 0) {
@@ -248,7 +255,7 @@ async function executeAgent(ctx: AgentContext): Promise<{
     if (!plan) throw new Error("Repair produced no valid patches");
 
     const repaired = applyPatchPlan(ctx.files, plan);
-    issues = detectFatalIssues(repaired);
+    issues = detectFatalIssues(plan, repaired, false);
     if (issues.length > 0) throw new Error(`Repair still has issues: ${describeFatalIssues(issues)}`);
 
     return {
@@ -303,18 +310,24 @@ async function reflectAndQueueTasks(
   // Insert tasks
   const createdIds: string[] = [];
   for (const title of tasks) {
-    const { data, error } = await ctx.supabase.from("agent_tasks").insert({
-      user_id: ctx.agent.id, // this will be fixed by RLS to actual user
-      project_id: ctx.project.id,
-      agent_id: ctx.agent.id,
-      title,
-      status: "queued",
-      priority: "medium",
-    });
-    if (!error && data) createdIds.push(data[0]?.id || "");
+    const { data, error } = await ctx.supabase
+      .from("agent_tasks")
+      .insert({
+        user_id: ctx.userId,
+        project_id: ctx.project.id,
+        agent_id: ctx.agent.id,
+        title,
+        status: "queued",
+        priority: "medium",
+      })
+      .select("id");
+
+    if (!error && Array.isArray(data) && data[0]) {
+      createdIds.push((data[0] as { id: string }).id);
+    }
   }
 
-  return createdIds.filter(Boolean);
+  return createdIds;
 }
 
 async function drainStream(stream: ReadableStream<Uint8Array>): Promise<string> {
@@ -359,7 +372,7 @@ export async function runAgentTask(
 
     // Save files
     if (changedFiles.length > 0) {
-      const saved = await saveFiles(ctx.project.id, changedFiles, ctx.supabase);
+      const saved = await saveFiles(ctx.userId, ctx.project.id, changedFiles, ctx.supabase);
       if (!saved) {
         return { ok: false, error: "Failed to save files" };
       }
@@ -372,10 +385,10 @@ export async function runAgentTask(
     }
 
     // Write report
-    const { id: reportId } = (await ctx.supabase
+    const { data: reportData } = await ctx.supabase
       .from("agent_reports")
       .insert({
-        user_id: ctx.agent.id, // RLS will fix
+        user_id: ctx.userId,
         project_id: ctx.project.id,
         agent_id: ctx.agent.id,
         task_id: ctx.task?.id || null,
@@ -383,7 +396,9 @@ export async function runAgentTask(
         content: reportContent,
       })
       .select("id")
-      .single()) as { data?: { id: string } };
+      .single();
+
+    const reportId = reportData?.id;
 
     // Reflect and queue follow-ups
     const followUpIds = await reflectAndQueueTasks(ctx, changedFiles);
