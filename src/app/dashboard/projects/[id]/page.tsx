@@ -2,10 +2,15 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { redirect } from "next/navigation";
-import { ArrowLeft, ArrowRight, Calendar, FolderGit2, GitBranch } from "lucide-react";
+import { ArrowRight, ArrowLeft, Bot, Calendar, FileText, FolderGit2, GitBranch, Target } from "lucide-react";
 import { PageHeader, Panel, StatusBadge } from "@/components/platform/widgets";
+import { AgentStatusBadge } from "@/components/platform/agent-controls";
+import { DeployAgentButton } from "@/components/platform/deploy-agent-modal";
+import { TaskQueue } from "@/components/platform/task-queue";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import { deleteProject } from "@/lib/actions/projects";
+import { listAgents, listTasks, listReports } from "@/lib/actions/agents";
+import { ROLE_PRESETS } from "@/lib/data/agents";
 
 export const metadata: Metadata = { title: "Project" };
 
@@ -75,6 +80,23 @@ export default async function ProjectDetailPage({ params }: PageProps) {
     ? ((repoRaw[0] as RepoJoin | undefined) ?? null)
     : ((repoRaw as RepoJoin | null) ?? null);
 
+  // Workspace data for this project. All defensive — empty if the agents
+  // migration hasn't been applied yet (queries resolve to null, not throw).
+  const [agents, tasks, reports, goalsRow] = await Promise.all([
+    listAgents(id),
+    listTasks({ projectId: id }),
+    listReports({ projectId: id, limit: 5 }),
+    supabase
+      .from("projects")
+      .select("goals")
+      .eq("id", id)
+      .eq("user_id", user.id)
+      .maybeSingle(),
+  ]);
+  const goals: string[] =
+    (goalsRow.data?.goals as string[] | undefined) ?? [];
+  const projectOption = [{ id: project.id, name: project.name }];
+
   const createdAt = new Date(project.created_at).toLocaleDateString("en-US", {
     year: "numeric",
     month: "long",
@@ -105,17 +127,102 @@ export default async function ProjectDetailPage({ params }: PageProps) {
         action={
           <div className="flex items-center gap-3">
             <StatusBadge status={project.status} />
-            <button
-              className="flex h-9 items-center gap-2 rounded-lg bg-brass px-4 text-[12.5px] font-medium text-carbon transition-colors duration-200 hover:bg-brass-deep disabled:opacity-50"
-              disabled
-              title="Coming soon"
+            <DeployAgentButton projects={projectOption} defaultProjectId={project.id} variant="ghost" />
+            <Link
+              href={`/workspace/${project.id}`}
+              className="flex h-9 items-center gap-2 rounded-lg bg-brass px-4 text-[12.5px] font-medium text-carbon transition-colors duration-200 hover:bg-brass-deep"
             >
-              Start building
+              Open workspace
               <ArrowRight className="size-3.5" />
-            </button>
+            </Link>
           </div>
         }
       />
+
+      {/* Current goals */}
+      <Panel className="mb-4" title="Current goals">
+        {goals.length === 0 ? (
+          <p className="text-[13px] text-dusk-faint">
+            No goals set yet. Goals give your agents direction for what to work on.
+          </p>
+        ) : (
+          <ul className="space-y-2.5">
+            {goals.map((g, i) => (
+              <li key={i} className="flex items-start gap-2.5">
+                <Target className="mt-0.5 size-4 shrink-0 text-brass" />
+                <span className="text-[13.5px] leading-relaxed text-dusk">{g}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Panel>
+
+      {/* Active agents + task queue */}
+      <div className="mb-4 grid gap-4 lg:grid-cols-2">
+        <Panel
+          title="Active agents"
+          meta={<span className="text-[11.5px] text-dusk-faint">{agents.length}</span>}
+        >
+          {agents.length === 0 ? (
+            <p className="py-4 text-center text-[13px] text-dusk-faint">
+              No agents on this project yet. Deploy one to start work.
+            </p>
+          ) : (
+            <ul className="space-y-2.5">
+              {agents.map((a) => {
+                const Icon = ROLE_PRESETS[a.role]?.icon ?? Bot;
+                return (
+                  <li key={a.id}>
+                    <Link
+                      href={`/dashboard/agents/${a.id}`}
+                      className="flex items-center gap-3 rounded-lg border border-carbon-line bg-carbon p-3 transition-colors hover:border-carbon-line-strong"
+                    >
+                      <Icon className="size-4 shrink-0 text-brass" strokeWidth={1.7} />
+                      <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-dusk">
+                        {a.name}
+                      </span>
+                      <AgentStatusBadge status={a.status} />
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Panel>
+
+        <Panel title="Task queue">
+          <TaskQueue projectId={project.id} tasks={tasks} />
+        </Panel>
+      </div>
+
+      {/* Recent reports */}
+      <Panel
+        className="mb-4"
+        title="Recent reports"
+        meta={<span className="text-[11.5px] text-dusk-faint">{reports.length}</span>}
+      >
+        {reports.length === 0 ? (
+          <p className="py-4 text-center text-[13px] text-dusk-faint">
+            No reports yet. Agents generate reports as they complete work.
+          </p>
+        ) : (
+          <ul className="space-y-2.5">
+            {reports.map((r) => (
+              <li key={r.id} className="flex items-start gap-3 rounded-lg border border-carbon-line bg-carbon p-3.5">
+                <FileText className="mt-0.5 size-4 shrink-0 text-brass" />
+                <div className="min-w-0">
+                  <p className="text-[13px] font-medium text-dusk">{r.title}</p>
+                  {r.summary && (
+                    <p className="mt-0.5 line-clamp-2 text-[12.5px] leading-relaxed text-dusk-muted">
+                      {r.summary}
+                    </p>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Panel>
 
       <div className="grid gap-4 lg:grid-cols-2">
         {/* Project details */}
