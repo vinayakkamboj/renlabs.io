@@ -73,7 +73,7 @@ src/
 
 const PROTOCOL = `## OUTPUT PROTOCOL — file_patches (REQUIRED)
 
-Your response MUST contain exactly one \`<file_patches>\` block and nothing else of substance. No \`<thinking>\`, no prose before or after.
+Your response MUST contain exactly one \`<file_patches>\` block and nothing else of substance. Do NOT emit \`<thinking>\` tags, chain-of-thought, planning notes, or any prose before or after — start your reply directly with the \`<file_patches>\` block. Do your reasoning silently; the user only sees the one-line \`plan\` field and the files. Long reasoning wastes the token budget and causes files to truncate.
 
 \`\`\`
 <file_patches>
@@ -183,12 +183,13 @@ ${PROTOCOL}
 
 Architect the FULL product the user described:
 
-1. **Parse the product vision.** What pages, views, and flows does the user naturally expect? Build all of them.
-2. **Route every view.** Every distinct UI surface gets a page file and a URL. Wire it up in App.tsx.
-3. **Add Zustand stores** for any state that crosses component or page boundaries.
-4. **Populate with real mock data** in \`src/data/\` — typed arrays, realistic content, no lorem ipsum.
-5. **Target 10–15 files** for a real first build: thin App.tsx, 3–6 pages, 3–6 shared components, 1–2 stores, 1–2 data files, updated \`${PROJECT_MEMORY_FILE}\`.
-6. **Every screen looks done** — no "coming soon" placeholders, no dead buttons, no empty states without a design for them.
+1. **Design phase first — lock the palette.** Before any component, decide a cohesive, modern, minimalist color system that fits THIS product's domain and mood, and write it into \`src/index.css\` (\`:root\` and \`[data-theme="dark"]\`) as HSL tokens. Rules: a near-white (not pure white) background with a faint hue; near-black text; exactly ONE confident accent as \`--primary\`; muted slate/neutral greys for secondary/muted/borders. Restrained and tasteful — never muddy, neon, or rainbow. Every component then uses the semantic tokens (\`bg-primary\`, \`text-foreground\`, \`bg-card\`, \`border-border\`, \`text-muted-foreground\`) so the whole app is automatically themed and colors always render.
+2. **Parse the product vision.** What pages, views, and flows does the user naturally expect? Build all of them.
+3. **Route every view.** Every distinct UI surface gets a page file and a URL. Wire it up in App.tsx.
+4. **Add Zustand stores** for any state that crosses component or page boundaries.
+5. **Populate with real mock data** in \`src/data/\` — typed arrays, realistic content, no lorem ipsum.
+6. **Target 8–14 files** for a real first build: thin App.tsx, themed index.css, 3–6 pages, 3–5 shared components, 1–2 stores, 1–2 data files, updated \`${PROJECT_MEMORY_FILE}\`. Finish every file completely — never start more files than you can complete.
+7. **Every screen looks done** — no "coming soon" placeholders, no dead buttons, no empty states without a design for them.
 
 Build the real product. Do not ship a static hero page with placeholder text.`;
 }

@@ -6,6 +6,26 @@ import { ShieldCheck } from "lucide-react";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 
 /**
+ * The OAuth callback origin to use for admin sign-in.
+ *
+ * Supabase only honours a `redirectTo` that is in its Redirect-URL allowlist;
+ * otherwise it silently falls back to the configured Site URL (the home page) —
+ * which is exactly the "admin login bounces me to home" bug. The apex domain's
+ * callback (`https://example.com/auth/callback`) is always allowlisted because
+ * normal user login uses it, while the `admin.` subdomain's callback usually
+ * is not. So when we're on an `admin.` host, route OAuth through the apex
+ * domain; the callback then redirects to `/admin`, which the same app serves on
+ * every host. `NEXT_PUBLIC_APP_URL` overrides this when set.
+ */
+function adminCallbackBase(): string {
+  const origin = location.origin;
+  if (origin.includes("://admin.")) {
+    return origin.replace("://admin.", "://");
+  }
+  return process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? origin;
+}
+
+/**
  * Dedicated, branded sign-in for the Ren Labs admin. Separate from the user
  * login so it's clear this is the internal control surface — only allowlisted
  * Ren officials can get past it (the server still enforces admin status after
@@ -42,14 +62,10 @@ export function AdminLogin() {
     setPending(true);
     setError(null);
     const supabase = createClient();
-    // Route the OAuth callback through the canonical app URL so it always hits
-    // an allowlisted Supabase Redirect URL, even when signing in from an
-    // admin.* subdomain that may not be in the allowlist.
-    const base = process.env.NEXT_PUBLIC_APP_URL ?? location.origin;
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${base}/auth/callback?next=${encodeURIComponent("/admin")}`,
+        redirectTo: `${adminCallbackBase()}/auth/callback?next=${encodeURIComponent("/admin")}`,
         queryParams: { prompt: "select_account", access_type: "offline" },
       },
     });

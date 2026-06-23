@@ -195,8 +195,8 @@ export default async function DashboardPage() {
 
 function ProjectCard({ project }: { project: Project }) {
   return (
-    <div className="group relative flex flex-col overflow-hidden rounded-xl border border-carbon-line bg-carbon-raised transition-all duration-150 hover:border-carbon-line-strong hover:bg-carbon-high/50">
-      <Link href={`/workspace/${project.id}`} className="flex flex-1 flex-col p-4">
+    <div className="group relative flex flex-col rounded-xl border border-carbon-line bg-carbon-raised transition-all duration-150 hover:border-carbon-line-strong hover:bg-carbon-high/50">
+      <Link href={`/workspace/${project.id}`} className="flex flex-1 flex-col rounded-xl p-4">
         <div className="flex items-start justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
             {project.kind === "new" ? (

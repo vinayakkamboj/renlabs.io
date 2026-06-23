@@ -288,7 +288,14 @@ export function isCodeFileComplete(content: string): boolean {
 
 /** Remove the <file_patches> block (closed or truncated) from chat content. */
 export function stripFilePatchPlan(content: string): string {
-  let stripped = content.replace(/<file_patches>[\s\S]*?<\/file_patches>/, "");
+  let stripped = content;
+  // Remove chain-of-thought the model may emit despite instructions — both a
+  // fully-closed block and a trailing unclosed one (mid-stream). Without this,
+  // the entire reasoning dump streams into the chat panel and looks broken.
+  stripped = stripped.replace(/<thinking>[\s\S]*?<\/thinking>/gi, "");
+  stripped = stripped.replace(/<thinking>[\s\S]*$/i, "");
+  // Remove the file_patches block (closed, or trailing/unclosed while streaming).
+  stripped = stripped.replace(/<file_patches>[\s\S]*?<\/file_patches>/, "");
   stripped = stripped.replace(/<file_patches>[\s\S]*$/, "");
   return stripped.trim();
 }

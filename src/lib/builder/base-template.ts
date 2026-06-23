@@ -83,49 +83,52 @@ createRoot(document.getElementById("root")!).render(
 
 const INDEX_CSS = `@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
 
+/* Default design system — a clean, modern, minimalist palette: cool slate
+   neutrals with a single confident indigo accent. The build agent re-themes
+   these tokens during its design phase to fit each product. */
 :root {
-  --background: 40 30% 98%;
-  --foreground: 24 10% 12%;
+  --background: 0 0% 100%;
+  --foreground: 222 47% 11%;
   --card: 0 0% 100%;
-  --card-foreground: 24 10% 12%;
+  --card-foreground: 222 47% 11%;
   --popover: 0 0% 100%;
-  --popover-foreground: 24 10% 12%;
-  --primary: 35 32% 41%;
-  --primary-foreground: 40 30% 98%;
-  --secondary: 40 14% 94%;
-  --secondary-foreground: 24 10% 18%;
-  --muted: 40 14% 94%;
-  --muted-foreground: 30 6% 45%;
-  --accent: 35 40% 90%;
-  --accent-foreground: 24 10% 18%;
-  --destructive: 5 65% 48%;
-  --destructive-foreground: 40 30% 98%;
-  --border: 38 18% 88%;
-  --input: 38 18% 88%;
-  --ring: 35 32% 41%;
+  --popover-foreground: 222 47% 11%;
+  --primary: 243 75% 59%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 220 14% 96%;
+  --secondary-foreground: 222 39% 16%;
+  --muted: 220 14% 96%;
+  --muted-foreground: 220 9% 46%;
+  --accent: 226 100% 97%;
+  --accent-foreground: 243 75% 45%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 220 13% 91%;
+  --input: 220 13% 91%;
+  --ring: 243 75% 59%;
   --radius: 0.625rem;
 }
 
 [data-theme="dark"] {
-  --background: 24 12% 8%;
-  --foreground: 40 20% 90%;
-  --card: 24 11% 11%;
-  --card-foreground: 40 20% 90%;
-  --popover: 24 11% 11%;
-  --popover-foreground: 40 20% 90%;
-  --primary: 38 45% 62%;
-  --primary-foreground: 24 12% 8%;
-  --secondary: 24 8% 16%;
-  --secondary-foreground: 40 20% 90%;
-  --muted: 24 8% 16%;
-  --muted-foreground: 36 8% 60%;
-  --accent: 24 8% 18%;
-  --accent-foreground: 40 20% 90%;
-  --destructive: 5 60% 55%;
-  --destructive-foreground: 40 20% 90%;
-  --border: 24 8% 20%;
-  --input: 24 8% 20%;
-  --ring: 38 45% 62%;
+  --background: 222 47% 7%;
+  --foreground: 210 20% 96%;
+  --card: 222 41% 10%;
+  --card-foreground: 210 20% 96%;
+  --popover: 222 41% 10%;
+  --popover-foreground: 210 20% 96%;
+  --primary: 245 80% 67%;
+  --primary-foreground: 222 47% 7%;
+  --secondary: 222 30% 16%;
+  --secondary-foreground: 210 20% 96%;
+  --muted: 222 30% 16%;
+  --muted-foreground: 215 16% 62%;
+  --accent: 222 33% 18%;
+  --accent-foreground: 245 80% 80%;
+  --destructive: 0 72% 56%;
+  --destructive-foreground: 210 20% 96%;
+  --border: 222 25% 20%;
+  --input: 222 25% 20%;
+  --ring: 245 80% 67%;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; border-color: hsl(var(--border)); }

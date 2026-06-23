@@ -330,10 +330,14 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         ? `\n\n_Note: ${droppedFiles.length} file(s) came back incomplete and were skipped to keep the preview working — ask me to finish ${droppedFiles.join(", ")}._`
         : "";
 
+      // Keep the chat concise: lead with the one-line plan summary (the file
+      // list is shown as a chip below). Only fall back to prose if there's no
+      // plan summary. Long model prose / reasoning never goes into the bubble.
+      const headline = plan.plan?.trim() || prose || "Done.";
       const assistantMsg: BuildMessage = {
         id: newId(),
         role: "assistant",
-        content: (prose || plan.plan) + note,
+        content: headline + note,
         plan: { summary: plan.plan, files: changedPaths },
         createdAt: new Date().toISOString(),
       };
