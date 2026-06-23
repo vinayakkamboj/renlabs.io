@@ -20,9 +20,9 @@ export function isOpenRouterConfigured(): boolean {
   return Boolean(process.env.OPENROUTER_API_KEY);
 }
 
-/** The Astra model slug on OpenRouter. */
+/** The Astra model slug on OpenRouter. Defaults to Claude Opus 4.8. */
 export function astraModelId(): string {
-  return process.env.OPENROUTER_MODEL ?? "z-ai/glm-5.2";
+  return process.env.OPENROUTER_MODEL ?? "anthropic/claude-opus-4.8";
 }
 
 /** Build an OpenAI-style message (multimodal when images are attached). */
@@ -63,7 +63,10 @@ export async function openRouterStream(
     body: JSON.stringify({
       model: opts.model ?? astraModelId(),
       stream: true,
-      temperature: opts.temperature ?? 0.7,
+      // `temperature` is deprecated on the latest models (e.g. Claude Opus 4.8)
+      // and the gateway returns a 400 if it's sent. Only include it when a
+      // caller explicitly provides one.
+      ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
       max_tokens: opts.maxTokens ?? 2048,
       messages: messages.map(toOpenAIMessage),
     }),

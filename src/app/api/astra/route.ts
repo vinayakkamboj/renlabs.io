@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
 
   const result = await streamAstraText(
     [{ role: "system", content: SYSTEM_PROMPT }, ...messages.slice(-20)],
-    { temperature: 0.7, maxTokens: 2048 },
+    { maxTokens: 2048 },
   );
 
   if (!result.ok) {

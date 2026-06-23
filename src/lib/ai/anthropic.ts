@@ -75,7 +75,10 @@ export async function anthropicStream(
     body: JSON.stringify({
       model: opts.model ?? anthropicModelId(),
       stream: true,
-      temperature: opts.temperature ?? 0.7,
+      // `temperature` is deprecated on the latest Claude models (Opus 4.8+) and
+      // sending it returns a 400. Only include it when a caller explicitly asks
+      // for one, so default builds work on current models.
+      ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
       max_tokens: opts.maxTokens ?? 2048,
       system: system || undefined,
       messages: turns,

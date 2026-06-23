@@ -159,7 +159,7 @@ export async function POST(req: NextRequest) {
       { role: "system", content: system },
       ...apiMessages.slice(-16),
     ],
-    { temperature: 0.4, maxTokens: MAX_OUTPUT_TOKENS },
+    { maxTokens: MAX_OUTPUT_TOKENS },
   );
 
   if (!result.ok) {

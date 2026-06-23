@@ -21,7 +21,7 @@ export const MODEL_TIERS: ModelTier[] = [
     id: "v1",
     brandName: "Astra v1",
     tagline: "Ren Labs' autonomous builder — plans, writes, and ships your app",
-    modelId: "claude-sonnet-4-6",
+    modelId: "claude-opus-4-8",
   },
 ];
 
