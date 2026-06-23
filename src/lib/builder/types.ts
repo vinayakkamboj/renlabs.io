@@ -8,8 +8,10 @@
  */
 
 export interface ProjectFile {
+  id?: string;
   path: string;
   content: string;
+  language?: string | null;
 }
 
 /** A single change in a patch plan — a full-file write. */
