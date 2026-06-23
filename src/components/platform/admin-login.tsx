@@ -42,10 +42,14 @@ export function AdminLogin() {
     setPending(true);
     setError(null);
     const supabase = createClient();
+    // Route the OAuth callback through the canonical app URL so it always hits
+    // an allowlisted Supabase Redirect URL, even when signing in from an
+    // admin.* subdomain that may not be in the allowlist.
+    const base = process.env.NEXT_PUBLIC_APP_URL ?? location.origin;
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${location.origin}/auth/callback?next=${encodeURIComponent("/admin")}`,
+        redirectTo: `${base}/auth/callback?next=${encodeURIComponent("/admin")}`,
         queryParams: { prompt: "select_account", access_type: "offline" },
       },
     });

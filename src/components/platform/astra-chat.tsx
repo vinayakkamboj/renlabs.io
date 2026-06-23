@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, Loader2 } from "lucide-react";
+import { ArrowUp, ImagePlus, Loader2, X } from "lucide-react";
 import { RenMark } from "@/components/ui/wordmark";
+import { MarkdownContent } from "@/components/ui/markdown";
 import { cn } from "@/lib/utils";
 
 interface Msg {
   id: string;
   role: "user" | "assistant";
   content: string;
+  images?: string[];
 }
 
 const SUGGESTIONS = [
@@ -18,28 +20,59 @@ const SUGGESTIONS = [
   "Refactor this loop to be more readable",
 ];
 
+const MAX_IMAGES = 4;
+const MAX_BYTES = 4 * 1024 * 1024;
+
 export function AstraChat() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
+  const [images, setImages] = useState<string[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [streamText, setStreamText] = useState("");
   const [remaining, setRemaining] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages, streamText]);
 
+  async function addFiles(files: FileList | null) {
+    if (!files?.length) return;
+    const room = MAX_IMAGES - images.length;
+    const picked = Array.from(files)
+      .filter((f) => f.type.startsWith("image/") && f.size <= MAX_BYTES)
+      .slice(0, Math.max(0, room));
+    const urls = await Promise.all(
+      picked.map(
+        (f) =>
+          new Promise<string>((resolve, reject) => {
+            const r = new FileReader();
+            r.onload = () => resolve(r.result as string);
+            r.onerror = reject;
+            r.readAsDataURL(f);
+          }),
+      ),
+    );
+    setImages((prev) => [...prev, ...urls].slice(0, MAX_IMAGES));
+  }
+
   async function send(text: string) {
     const trimmed = text.trim();
-    if (!trimmed || streaming) return;
+    if ((!trimmed && images.length === 0) || streaming) return;
     setError(null);
 
-    const userMsg: Msg = { id: crypto.randomUUID(), role: "user", content: trimmed };
+    const userMsg: Msg = {
+      id: crypto.randomUUID(),
+      role: "user",
+      content: trimmed,
+      images: images.length > 0 ? [...images] : undefined,
+    };
     const history = [...messages, userMsg];
     setMessages(history);
     setInput("");
+    setImages([]);
     setStreaming(true);
     setStreamText("");
 
@@ -136,10 +169,14 @@ export function AstraChat() {
         ) : (
           <div className="mx-auto max-w-2xl space-y-5">
             {messages.map((m) => (
-              <Bubble key={m.id} role={m.role} content={m.content} />
+              <Bubble key={m.id} role={m.role} content={m.content} images={m.images} />
             ))}
             {streaming && (
-              <Bubble role="assistant" content={streamText || "…"} />
+              streamText ? (
+                <Bubble role="assistant" content={streamText} />
+              ) : (
+                <ThinkingDots />
+              )
             )}
           </div>
         )}
@@ -151,10 +188,41 @@ export function AstraChat() {
 
       {/* Composer */}
       <div className="mx-auto w-full max-w-2xl">
-        <div className="flex items-end gap-2 rounded-2xl border border-carbon-line bg-carbon-raised p-2 focus-within:border-carbon-line-strong">
+        <div className="overflow-hidden rounded-2xl border border-carbon-line bg-carbon-raised focus-within:border-carbon-line-strong">
+          {images.length > 0 && (
+            <div className="flex flex-wrap gap-2 px-3 pt-3">
+              {images.map((src, idx) => (
+                <div
+                  key={idx}
+                  className="group relative size-14 overflow-hidden rounded-lg border border-carbon-line"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={src} alt="attachment" className="size-full object-cover" />
+                  <button
+                    onClick={() => setImages((p) => p.filter((_, j) => j !== idx))}
+                    className="absolute right-0.5 top-0.5 flex size-4 items-center justify-center rounded-full bg-carbon/80 text-dusk opacity-0 transition-opacity group-hover:opacity-100"
+                    aria-label="Remove"
+                  >
+                    <X className="size-2.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onPaste={(e) => {
+              const imgs = Array.from(e.clipboardData.files).filter((f) =>
+                f.type.startsWith("image/"),
+              );
+              if (imgs.length) {
+                e.preventDefault();
+                const dt = new DataTransfer();
+                imgs.forEach((f) => dt.items.add(f));
+                void addFiles(dt.files);
+              }
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
@@ -163,19 +231,40 @@ export function AstraChat() {
             }}
             rows={1}
             placeholder="Message Astra…"
-            className="platform-scroll max-h-40 flex-1 resize-none bg-transparent px-2.5 py-2 text-[14px] text-dusk outline-none placeholder:text-dusk-faint"
+            className="platform-scroll max-h-40 w-full resize-none bg-transparent px-3.5 pt-3 text-[14px] text-dusk outline-none placeholder:text-dusk-faint"
           />
-          <button
-            onClick={() => send(input)}
-            disabled={!input.trim() || streaming}
-            className="flex size-9 items-center justify-center rounded-xl bg-brass text-carbon transition-colors hover:bg-brass-deep disabled:opacity-30"
-          >
-            {streaming ? (
-              <Loader2 className="size-4 animate-spin" />
-            ) : (
-              <ArrowUp className="size-4" />
-            )}
-          </button>
+          <div className="flex items-center gap-2 px-2 pb-2 pt-1">
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              multiple
+              hidden
+              onChange={(e) => { void addFiles(e.target.files); e.target.value = ""; }}
+            />
+            <button
+              onClick={() => fileRef.current?.click()}
+              disabled={images.length >= MAX_IMAGES}
+              title="Attach image"
+              className="flex size-8 items-center justify-center rounded-xl text-dusk-faint transition-colors hover:bg-carbon-high hover:text-dusk disabled:opacity-30"
+            >
+              <ImagePlus className="size-4" />
+            </button>
+            <span className="text-[10.5px] text-dusk-faint/60">⏎ send · ⇧⏎ newline</span>
+            <div className="ml-auto">
+              <button
+                onClick={() => send(input)}
+                disabled={(!input.trim() && images.length === 0) || streaming}
+                className="flex size-9 items-center justify-center rounded-xl bg-brass text-carbon transition-colors hover:bg-brass-deep disabled:opacity-30"
+              >
+                {streaming ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <ArrowUp className="size-4" />
+                )}
+              </button>
+            </div>
+          </div>
         </div>
         <p className="mt-2 text-center text-[10.5px] text-dusk-faint">
           Astra can make mistakes. Verify important information.
@@ -185,19 +274,55 @@ export function AstraChat() {
   );
 }
 
+function ThinkingDots() {
+  return (
+    <div className="flex gap-3">
+      <div className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md bg-brass/15">
+        <RenMark className="size-3.5 text-brass" />
+      </div>
+      <div className="flex items-center gap-1 py-1.5">
+        {[0, 150, 300].map((delay) => (
+          <span
+            key={delay}
+            className="size-1.5 animate-bounce rounded-full bg-dusk-faint/50"
+            style={{ animationDelay: `${delay}ms` }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Bubble({
   role,
   content,
+  images,
 }: {
   role: "user" | "assistant";
   content: string;
+  images?: string[];
 }) {
   if (role === "user") {
     return (
-      <div className="flex justify-end">
-        <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-carbon-high px-4 py-2.5 text-[13.5px] leading-relaxed text-dusk">
-          {content}
-        </div>
+      <div className="flex flex-col items-end gap-1.5">
+        {images && images.length > 0 && (
+          <div className="flex max-w-[85%] flex-wrap justify-end gap-1.5">
+            {images.map((src, i) => (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={i}
+                src={src}
+                alt="attachment"
+                className="size-20 rounded-lg border border-carbon-line object-cover"
+              />
+            ))}
+          </div>
+        )}
+        {content && (
+          <div className="max-w-[85%] rounded-2xl rounded-br-sm bg-carbon-high px-4 py-2.5 text-[13.5px] leading-relaxed text-dusk">
+            {content}
+          </div>
+        )}
       </div>
     );
   }
@@ -206,12 +331,8 @@ function Bubble({
       <div className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md bg-brass/15">
         <RenMark className="size-3.5 text-brass" />
       </div>
-      <div
-        className={cn(
-          "min-w-0 flex-1 whitespace-pre-wrap text-[13.5px] leading-relaxed text-dusk-muted",
-        )}
-      >
-        {content}
+      <div className={cn("min-w-0 flex-1")}>
+        <MarkdownContent text={content} />
       </div>
     </div>
   );

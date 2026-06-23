@@ -12,6 +12,7 @@ import {
   X,
 } from "lucide-react";
 import { RenMark } from "@/components/ui/wordmark";
+import { MarkdownContent } from "@/components/ui/markdown";
 import { useWorkspaceStore } from "@/lib/builder/store";
 import { ASTRA_MODEL } from "@/lib/builder/model-tiers";
 import type { BuildMessage } from "@/lib/builder/types";
@@ -228,9 +229,7 @@ function Message({ message }: { message: BuildMessage }) {
   return (
     <div className="flex">
       <div className="min-w-0 flex-1">
-        <p className="whitespace-pre-wrap text-[13px] leading-relaxed text-dusk-muted">
-          {message.content}
-        </p>
+        <MarkdownContent text={message.content} className="text-[13px]" />
         {message.plan && (
           <div className="mt-2.5 overflow-hidden rounded-xl border border-carbon-line bg-carbon-raised">
             <div className="border-b border-carbon-line px-3 py-2">
