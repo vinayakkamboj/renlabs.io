@@ -60,11 +60,11 @@ export default async function AgentDetailPage({
   return (
     <div className="space-y-6">
       <Link
-        href="/dashboard/agents"
+        href={`/dashboard/projects/${agent.projectId}`}
         className="inline-flex items-center gap-1.5 text-[12.5px] text-dusk-muted transition-colors hover:text-dusk"
       >
         <ArrowLeft className="size-3.5" />
-        All agents
+        Back to project
       </Link>
 
       {/* Header */}

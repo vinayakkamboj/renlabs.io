@@ -97,12 +97,31 @@ async function sendBrevoEmail(to: string, code: string): Promise<void> {
 
   if (!res.ok) {
     let detail = `${res.status} ${res.statusText}`;
+    let code = "";
     try {
-      const json = (await res.json()) as { message?: string };
+      const json = (await res.json()) as { message?: string; code?: string };
       if (json?.message) detail = json.message;
+      if (json?.code) code = json.code;
     } catch {
       // ignore parse errors
     }
+
+    // Brevo's "Authorised IPs" security feature rejects requests from any IP
+    // not on the allowlist. Serverless functions (Vercel) use rotating IPs, so
+    // this restriction WILL keep failing — the real fix is to turn the feature
+    // off in Brevo, not to chase IPs. Surface that instruction verbatim.
+    if (
+      code === "unrecognised_ip_address" ||
+      /unrecognised? IP address|authorised_ips|authorized_ips/i.test(detail)
+    ) {
+      throw new Error(
+        "Brevo is blocking this server's IP. Brevo → Settings → Security → " +
+          "Authorised IPs, and either DISABLE the IP restriction (recommended — " +
+          "serverless IPs change on every deploy) or add this server's IP. " +
+          `Brevo said: ${detail}`,
+      );
+    }
+
     throw new Error(`Brevo API error: ${detail}`);
   }
 }

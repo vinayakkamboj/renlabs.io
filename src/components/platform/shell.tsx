@@ -6,9 +6,10 @@ import { RenMark } from "@/components/ui/wordmark";
 import { UserMenu } from "@/components/auth/user-menu";
 import { cn } from "@/lib/utils";
 
+// Agents are managed per-project (inside each project's Agents tab), not as a
+// global list — so they intentionally don't appear in the top nav.
 const navLinks = [
   { href: "/dashboard", label: "Workspace", exact: true },
-  { href: "/dashboard/agents", label: "Agents" },
   { href: "/dashboard/activity", label: "Activity" },
   { href: "/dashboard/billing", label: "Billing" },
   { href: "/dashboard/integrations", label: "Integrations" },

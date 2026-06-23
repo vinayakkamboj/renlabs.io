@@ -5,34 +5,17 @@ import { useRouter } from "next/navigation";
 import { KeyRound, ShieldCheck, Smartphone } from "lucide-react";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 
-/**
- * The OAuth callback origin to use for admin sign-in.
- *
- * Supabase only honours a `redirectTo` that is in its Redirect-URL allowlist;
- * otherwise it silently falls back to the configured Site URL (the home page) —
- * which is exactly the "admin login bounces me to home" bug. The apex domain's
- * callback (`https://example.com/auth/callback`) is always allowlisted because
- * normal user login uses it, while the `admin.` subdomain's callback usually
- * is not. So when we're on an `admin.` host, route OAuth through the apex
- * domain; the callback then redirects to `/admin`, which the same app serves on
- * every host. `NEXT_PUBLIC_APP_URL` overrides this when set.
- */
-function adminCallbackBase(): string {
-  const origin = location.origin;
-  if (origin.includes("://admin.")) {
-    return origin.replace("://admin.", "://");
-  }
-  return process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? origin;
-}
-
 type LoginStep = "method" | "otp-sent" | "mfa";
 
 /**
- * Dedicated, branded sign-in for the Ren Labs admin. Supports:
- *  1. Email + password (direct)
- *  2. Email OTP / "sign in with code" (avoids OAuth redirect-allowlist issues)
- *  3. Google OAuth (routes through apex domain callback)
- *  4. TOTP 2FA verification when MFA is enrolled
+ * Dedicated, branded sign-in for the Ren Labs admin. Email-only by design:
+ *  1. Email OTP / "sign in with code" (primary — a 6-digit code via Brevo)
+ *  2. Email + password (fallback)
+ *  3. TOTP 2FA verification when MFA is enrolled
+ *
+ * Google OAuth was intentionally removed — admin access is restricted to a
+ * fixed set of verified email addresses, so a passwordless email code is both
+ * simpler and tighter than a social provider.
  */
 export function AdminLogin() {
   const router = useRouter();
@@ -45,7 +28,8 @@ export function AdminLogin() {
   const [mfaChallengeId, setMfaChallengeId] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [mode, setMode] = useState<"password" | "otp">("password");
+  // Email code is the primary, recommended method; password is the fallback.
+  const [mode, setMode] = useState<"password" | "otp">("otp");
 
   const inputClass =
     "h-11 w-full rounded-xl border border-carbon-line bg-carbon px-4 text-[14px] text-dusk outline-none transition-colors placeholder:text-dusk-faint focus:border-carbon-line-strong";
@@ -154,24 +138,6 @@ export function AdminLogin() {
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Invalid 2FA code.");
-      setPending(false);
-    }
-  }
-
-  async function google() {
-    if (pending) return;
-    setPending(true);
-    setError(null);
-    const supabase = createClient();
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${adminCallbackBase()}/auth/callback?next=${encodeURIComponent("/admin")}`,
-        queryParams: { prompt: "select_account", access_type: "offline" },
-      },
-    });
-    if (error) {
-      setError(error.message);
       setPending(false);
     }
   }
@@ -291,16 +257,8 @@ export function AdminLogin() {
       </p>
 
       <div className="mt-8 w-full max-w-sm">
-        {/* Method tabs */}
+        {/* Method tabs — email code is primary */}
         <div className="mb-5 flex rounded-xl border border-carbon-line bg-carbon-raised p-1">
-          <button
-            onClick={() => { setMode("password"); setError(null); }}
-            className={`flex-1 rounded-lg py-1.5 text-[13px] font-medium transition-colors ${
-              mode === "password" ? "bg-carbon text-dusk shadow-sm" : "text-dusk-muted hover:text-dusk"
-            }`}
-          >
-            Password
-          </button>
           <button
             onClick={() => { setMode("otp"); setError(null); }}
             className={`flex-1 rounded-lg py-1.5 text-[13px] font-medium transition-colors ${
@@ -309,21 +267,14 @@ export function AdminLogin() {
           >
             Email code
           </button>
-        </div>
-
-        {/* Google */}
-        <button
-          onClick={google}
-          disabled={pending}
-          className="flex h-11 w-full items-center justify-center gap-3 rounded-xl border border-carbon-line bg-carbon-raised text-[14px] font-medium text-dusk transition-colors hover:border-carbon-line-strong disabled:opacity-50"
-        >
-          Continue with Google
-        </button>
-
-        <div className="my-5 flex items-center gap-3">
-          <span className="h-px flex-1 bg-carbon-line" />
-          <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-dusk-faint">or</span>
-          <span className="h-px flex-1 bg-carbon-line" />
+          <button
+            onClick={() => { setMode("password"); setError(null); }}
+            className={`flex-1 rounded-lg py-1.5 text-[13px] font-medium transition-colors ${
+              mode === "password" ? "bg-carbon text-dusk shadow-sm" : "text-dusk-muted hover:text-dusk"
+            }`}
+          >
+            Password
+          </button>
         </div>
 
         {mode === "password" ? (

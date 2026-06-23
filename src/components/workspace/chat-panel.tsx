@@ -8,6 +8,7 @@ import {
   Layers,
   Loader2,
   Sparkles,
+  Square,
   Wand2,
   X,
 } from "lucide-react";
@@ -16,7 +17,6 @@ import { MarkdownContent } from "@/components/ui/markdown";
 import { useWorkspaceStore } from "@/lib/builder/store";
 import { ASTRA_MODEL } from "@/lib/builder/model-tiers";
 import type { BuildMessage } from "@/lib/builder/types";
-import { cn } from "@/lib/utils";
 
 const PHASE_LABEL: Record<string, string> = {
   thinking: "Astra is planning",
@@ -30,6 +30,7 @@ export function ChatPanel() {
   const phase = useWorkspaceStore((s) => s.phase);
   const streamingText = useWorkspaceStore((s) => s.streamingText);
   const sendMessage = useWorkspaceStore((s) => s.sendMessage);
+  const stopBuild = useWorkspaceStore((s) => s.stopBuild);
   const [input, setInput] = useState("");
   const [images, setImages] = useState<string[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -102,6 +103,13 @@ export function ChatPanel() {
             <div className="flex items-center gap-2 px-3 py-2.5 text-[12.5px] text-brass">
               <Loader2 className="size-3.5 animate-spin" />
               <span>{PHASE_LABEL[phase] ?? "Working"}…</span>
+              <button
+                onClick={stopBuild}
+                className="ml-auto flex items-center gap-1.5 rounded-md border border-carbon-line px-2 py-1 text-[11px] font-medium text-dusk-muted transition-colors hover:border-signal-red/40 hover:text-signal-red"
+              >
+                <Square className="size-3 fill-current" />
+                Stop
+              </button>
             </div>
             {streamingText && (
               <div className="border-t border-carbon-line px-3 py-2.5">
@@ -182,17 +190,23 @@ export function ChatPanel() {
               </button>
               <span className="text-[10.5px] text-dusk-faint/70">⏎ send · ⇧⏎ newline</span>
             </div>
-            <button
-              onClick={submit}
-              disabled={(!input.trim() && images.length === 0) || isBuilding}
-              className="flex size-7 items-center justify-center rounded-lg bg-brass text-carbon transition-all hover:bg-brass-deep disabled:opacity-30"
-            >
-              {isBuilding ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
+            {isBuilding ? (
+              <button
+                onClick={stopBuild}
+                title="Stop Astra"
+                className="flex size-7 items-center justify-center rounded-lg bg-signal-red/90 text-white transition-all hover:bg-signal-red"
+              >
+                <Square className="size-3 fill-current" />
+              </button>
+            ) : (
+              <button
+                onClick={submit}
+                disabled={!input.trim() && images.length === 0}
+                className="flex size-7 items-center justify-center rounded-lg bg-brass text-carbon transition-all hover:bg-brass-deep disabled:opacity-30"
+              >
                 <ArrowUp className="size-3.5" />
-              )}
-            </button>
+              </button>
+            )}
           </div>
         </div>
       </div>

@@ -11,6 +11,7 @@ import {
 import { buildEditPrompt, buildRepairPrompt } from "@/lib/builder/prompts";
 import { logActivity, setTaskStatus } from "./agents";
 import { ROLE_PRESETS } from "@/lib/data/agents";
+import { decryptSecret } from "@/lib/crypto/secrets";
 import type { Agent, AgentTask, TaskStatus, TaskPriority } from "@/lib/data/agents";
 import type { ProjectFile } from "@/lib/builder/types";
 
@@ -28,7 +29,59 @@ interface AgentContext {
   project: { id: string; name: string };
   task: AgentTask | null;
   files: ProjectFile[];
+  /** A short description of the project's connected Supabase schema, if any. */
+  schemaSummary: string | null;
   supabase: ReturnType<typeof createAdminClient>;
+}
+
+/**
+ * Read the project's connected Supabase backend (via the admin client, since the
+ * runner has no user session) and summarize its tables/columns for the model.
+ * Returns null when no backend is connected. Credentials are decrypted only here
+ * and never leave the server.
+ */
+async function loadSchemaSummary(
+  supabase: ReturnType<typeof createAdminClient>,
+  userId: string,
+  projectId: string,
+): Promise<string | null> {
+  try {
+    const { data } = await supabase
+      .from("user_integrations")
+      .select("config")
+      .eq("user_id", userId)
+      .eq("kind", "supabase")
+      .eq("project_id", projectId)
+      .maybeSingle();
+    if (!data) return null;
+
+    const cfg = data.config as Record<string, string>;
+    const projectUrl = cfg.project_url ?? "";
+    const key = decryptSecret(cfg.service_role_key ?? "") || decryptSecret(cfg.anon_key ?? "");
+    if (!projectUrl || !key) return null;
+
+    const res = await fetch(`${projectUrl}/rest/v1/`, {
+      headers: { apikey: key, Authorization: `Bearer ${key}` },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return null;
+
+    const spec = (await res.json()) as {
+      definitions?: Record<string, { properties?: Record<string, { type?: string; format?: string }> }>;
+    };
+    const tables = Object.entries(spec.definitions ?? {});
+    if (tables.length === 0) return null;
+
+    const lines = tables.map(([name, def]) => {
+      const cols = Object.entries(def.properties ?? {})
+        .map(([col, info]) => `${col} ${info.format ?? info.type ?? "unknown"}`)
+        .join(", ");
+      return `- ${name}(${cols})`;
+    });
+    return `The project is connected to a Supabase backend with this schema:\n${lines.join("\n")}`;
+  } catch {
+    return null;
+  }
 }
 
 async function loadContext(agentId: string, taskId?: string): Promise<AgentContext | null> {
@@ -97,7 +150,11 @@ async function loadContext(agentId: string, taskId?: string): Promise<AgentConte
 
   if (filesError) return null;
 
+  // Load the project's connected Supabase schema (if any) for grounding.
+  const schemaSummary = await loadSchemaSummary(supabase, userId, agentRow.project_id);
+
   return {
+    schemaSummary,
     agent: {
       id: agentRow.id,
       projectId: agentRow.project_id,
@@ -172,6 +229,11 @@ async function buildPrompt(ctx: AgentContext): Promise<ChatMsg[]> {
 
   const taskContext = ctx.task ? `\nCurrent task: ${ctx.task.title}${ctx.task.detail ? `\n${ctx.task.detail}` : ""}` : "";
 
+  // Ground the model in the project's real backend schema when one is connected.
+  const schemaContext = ctx.schemaSummary
+    ? `\n\n## Connected backend\n${ctx.schemaSummary}\nWrite queries and types that match this schema exactly.`
+    : "";
+
   const userMessage =
     ctx.task?.detail ||
     ctx.task?.title ||
@@ -182,7 +244,7 @@ async function buildPrompt(ctx: AgentContext): Promise<ChatMsg[]> {
   return [
     {
       role: "user",
-      content: userMessage + fileContext + taskContext,
+      content: userMessage + schemaContext + fileContext + taskContext,
     },
   ];
 }
