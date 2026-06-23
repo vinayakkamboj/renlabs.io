@@ -3,10 +3,11 @@ import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, CheckCircle2, Coins, Clock, FileText, Target } from "lucide-react";
 import { Panel } from "@/components/platform/widgets";
 import { AgentControls, AgentStatusBadge } from "@/components/platform/agent-controls";
+import { RunAgentButton } from "@/components/platform/run-agent-button";
+import { TaskQueue } from "@/components/platform/task-queue";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import { getAgent, listTasks, listReports } from "@/lib/actions/agents";
-import { ROLE_PRESETS, TASK_STATUS_LABEL } from "@/lib/data/agents";
-import { cn } from "@/lib/utils";
+import { ROLE_PRESETS } from "@/lib/data/agents";
 
 export const dynamic = "force-dynamic";
 
@@ -93,11 +94,14 @@ export default async function AgentDetailPage({
             </p>
           </div>
         </div>
-        <AgentControls
-          agentId={agent.id}
-          status={agent.status}
-          redirectOnDelete="/dashboard/agents"
-        />
+        <div className="flex items-center gap-2.5">
+          <RunAgentButton agentId={agent.id} />
+          <AgentControls
+            agentId={agent.id}
+            status={agent.status}
+            redirectOnDelete="/dashboard/agents"
+          />
+        </div>
       </div>
 
       {/* Objective */}
@@ -132,31 +136,12 @@ export default async function AgentDetailPage({
         ))}
       </div>
 
-      {/* Tasks */}
-      <Panel title="Tasks" meta={<span className="text-[11.5px] text-dusk-faint">{tasks.length}</span>}>
-        {tasks.length === 0 ? (
-          <p className="py-6 text-center text-[13px] text-dusk-faint">No tasks yet.</p>
-        ) : (
-          <ul className="divide-y divide-carbon-line/60">
-            {tasks.map((t) => (
-              <li key={t.id} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
-                <span className="min-w-0 truncate text-[13px] text-dusk">{t.title}</span>
-                <span
-                  className={cn(
-                    "shrink-0 rounded-full px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.08em]",
-                    t.status === "done"
-                      ? "bg-signal-green/15 text-signal-green"
-                      : t.status === "failed"
-                        ? "bg-signal-red/15 text-signal-red"
-                        : "bg-carbon-high text-dusk-muted",
-                  )}
-                >
-                  {TASK_STATUS_LABEL[t.status]}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
+      {/* Tasks — assign work, then Run agent to execute the queue */}
+      <Panel
+        title="Tasks"
+        meta={<span className="text-[11.5px] text-dusk-faint">Assign work · the agent runs the queue</span>}
+      >
+        <TaskQueue projectId={agent.projectId} agentId={agent.id} tasks={tasks} />
       </Panel>
 
       {/* Reports */}

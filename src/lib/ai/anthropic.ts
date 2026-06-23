@@ -17,7 +17,8 @@ export function isAnthropicConfigured(): boolean {
 }
 
 export function anthropicModelId(): string {
-  return process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-6";
+  // Default to the strongest coding-capable Claude. Override with ANTHROPIC_MODEL.
+  return process.env.ANTHROPIC_MODEL ?? "claude-opus-4-8";
 }
 
 /** Split a data URL into Anthropic's { media_type, data } image source. */

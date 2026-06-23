@@ -75,6 +75,21 @@ src/
 - Define TypeScript interfaces in \`src/data/types.ts\` or per-domain files.
 - Always handle loading, empty, and error states — never assume data is always present.`;
 
+const CORRECTNESS = `## Correctness — the code MUST run on the first try
+
+A build that throws at runtime is a failure, no matter how good it looks. Before you emit the patch, mentally compile every file:
+
+- **Imports resolve.** Every \`import\` points to a real package (from the allowed list) or a file you are creating in this same patch. No imports of files that don't exist. Default-export a component if you import it as default; named-export if you import it by name.
+- **Every referenced symbol is defined.** No using a variable, component, hook, or function you never declared or imported. No leftover references to a renamed/removed symbol.
+- **Hooks are valid.** \`useState\`/\`useEffect\`/\`useMemo\` etc. are called at the top level of a component, never conditionally or in a loop. Every hook is imported from \`react\`.
+- **JSX is well-formed.** Every tag is closed, every \`{expression}\` is balanced, every \`.map()\` returns an element with a stable \`key\`. No objects rendered directly as React children.
+- **Types line up.** Props passed match the component's interface. No calling a function with the wrong argument shape. No accessing \`.foo\` on a possibly-undefined value without a guard.
+- **Router is consistent.** Every \`<Route path>\` has a matching page component that exists. Every \`<Link to>\`/\`navigate()\` targets a real route. \`HashRouter\` only.
+- **State shape is sound.** Zustand store selectors read fields the store actually defines. No reading \`state.x\` when the store only has \`state.y\`.
+- **No half-built files.** Every file is complete: closed brackets, terminated strings, no \`// TODO\` stubs, no function bodies left empty. A truncated file breaks the entire preview.
+
+If a file is getting large, factor it into smaller files rather than risk truncation — but every file you reference must ship complete in the same patch. Correct and smaller beats ambitious and broken.`;
+
 const PROTOCOL = `## OUTPUT PROTOCOL — file_patches (REQUIRED)
 
 Your response MUST contain exactly one \`<file_patches>\` block. Do NOT emit \`<thinking>\` tags, chain-of-thought, planning notes, or any prose before or after the block. Start your response immediately with \`<file_patches>\`. Without the \`<file_patches>\` block, no files will be saved and the app will not build.
@@ -277,6 +292,8 @@ ${ENGINEERING}
 
 ${DESIGN}
 
+${CORRECTNESS}
+
 ${PROTOCOL}
 
 ## First-build mandate
@@ -308,6 +325,8 @@ ${ARCHITECTURE}
 ${ENGINEERING}
 
 ${DESIGN}
+
+${CORRECTNESS}
 
 ${PROTOCOL}
 
@@ -348,6 +367,8 @@ ${readmeSection}
 \`\`\`
 ${scriptLines || "  (none found)"}
 \`\`\`
+
+${CORRECTNESS}
 
 ${PROTOCOL}
 

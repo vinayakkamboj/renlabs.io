@@ -27,9 +27,12 @@ const STATUS_TONE: Record<TaskStatus, string> = {
  */
 export function TaskQueue({
   projectId,
+  agentId,
   tasks,
 }: {
   projectId: string;
+  /** When set, new tasks are assigned to this agent. */
+  agentId?: string;
   tasks: AgentTask[];
 }) {
   const router = useRouter();
@@ -41,7 +44,7 @@ export function TaskQueue({
     const trimmed = title.trim();
     if (!trimmed || adding) return;
     setAdding(true);
-    const res = await createTask({ projectId, title: trimmed });
+    const res = await createTask({ projectId, agentId, title: trimmed });
     setAdding(false);
     if (res.ok) {
       setTitle("");

@@ -109,3 +109,35 @@ export async function streamAstraText(
   }
   return firstError ?? { ok: false, status: 502, detail: "all_providers_failed" };
 }
+
+/**
+ * Run Astra to completion and return the full text (non-streaming callers like
+ * the autonomous agent runner, which need the whole response before parsing the
+ * file-patch block). Drains the normalized text stream into a single string.
+ */
+export async function completeAstraText(
+  messages: ChatMsg[],
+  opts: StreamOpts = {},
+): Promise<{ ok: true; text: string } | { ok: false; status: number; detail: string }> {
+  const result = await streamAstraText(messages, opts);
+  if (!result.ok) return result;
+
+  const reader = result.stream.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+  } catch (e) {
+    return {
+      ok: false,
+      status: 502,
+      detail: e instanceof Error ? e.message : "stream_read_failed",
+    };
+  }
+  return { ok: true, text };
+}

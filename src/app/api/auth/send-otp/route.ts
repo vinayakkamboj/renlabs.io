@@ -129,6 +129,8 @@ export async function POST(req: Request) {
 
   // Generate the OTP via Supabase Admin. This does NOT send any email —
   // the admin.generateLink API just creates the token and returns email_otp.
+  // Since the caller is already a verified admin email, we surface real error
+  // detail here so misconfiguration is debuggable instead of a silent failure.
   const supabase = createAdminClient();
   const { data, error } = await supabase.auth.admin.generateLink({
     type: "magiclink",
@@ -137,14 +139,22 @@ export async function POST(req: Request) {
 
   if (error) {
     console.error("[send-otp] generateLink error:", error.message);
-    // Return success to avoid leaking whether the email exists
-    return NextResponse.json({ ok: true });
+    return NextResponse.json(
+      { error: `Could not generate a code: ${error.message}` },
+      { status: 500 },
+    );
   }
 
   const code = data.properties?.email_otp;
   if (!code) {
     console.error("[send-otp] No email_otp in generateLink response");
-    return NextResponse.json({ ok: true });
+    return NextResponse.json(
+      {
+        error:
+          "Supabase did not return an OTP. Ensure email OTP is enabled for this project (Auth → Providers → Email).",
+      },
+      { status: 500 },
+    );
   }
 
   try {
@@ -152,8 +162,10 @@ export async function POST(req: Request) {
   } catch (sendErr) {
     const msg = sendErr instanceof Error ? sendErr.message : String(sendErr);
     console.error("[send-otp] Email delivery failed:", msg);
+    // The real Brevo reason (unverified sender, wrong key type, etc.) is the
+    // single most useful thing for fixing this — show it to the admin caller.
     return NextResponse.json(
-      { error: "Failed to send the code. Please try again." },
+      { error: `Email delivery failed — ${msg}` },
       { status: 502 },
     );
   }
