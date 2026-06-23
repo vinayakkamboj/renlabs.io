@@ -2,11 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { redirect } from "next/navigation";
-import { ArrowRight, ArrowLeft, Bot, Calendar, FileText, FolderGit2, GitBranch, Target } from "lucide-react";
+import { ArrowRight, ArrowLeft, Bot, Calendar, FileText, FolderGit2, GitBranch } from "lucide-react";
 import { PageHeader, Panel, StatusBadge } from "@/components/platform/widgets";
 import { AgentStatusBadge } from "@/components/platform/agent-controls";
 import { DeployAgentButton } from "@/components/platform/deploy-agent-modal";
 import { TaskQueue } from "@/components/platform/task-queue";
+import { GoalsEditor } from "@/components/platform/goals-editor";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import { deleteProject } from "@/lib/actions/projects";
 import { listAgents, listTasks, listReports } from "@/lib/actions/agents";
@@ -139,22 +140,9 @@ export default async function ProjectDetailPage({ params }: PageProps) {
         }
       />
 
-      {/* Current goals */}
+      {/* Current goals (editable) */}
       <Panel className="mb-4" title="Current goals">
-        {goals.length === 0 ? (
-          <p className="text-[13px] text-dusk-faint">
-            No goals set yet. Goals give your agents direction for what to work on.
-          </p>
-        ) : (
-          <ul className="space-y-2.5">
-            {goals.map((g, i) => (
-              <li key={i} className="flex items-start gap-2.5">
-                <Target className="mt-0.5 size-4 shrink-0 text-brass" />
-                <span className="text-[13.5px] leading-relaxed text-dusk">{g}</span>
-              </li>
-            ))}
-          </ul>
-        )}
+        <GoalsEditor projectId={project.id} initialGoals={goals} />
       </Panel>
 
       {/* Active agents + task queue */}

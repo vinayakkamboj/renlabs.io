@@ -172,6 +172,30 @@ export async function createProject(input: CreateProjectInput): Promise<void> {
   redirect(`/workspace/${data.id}`);
 }
 
+export async function updateProjectGoals(
+  projectId: string,
+  goals: string[],
+): Promise<{ ok: boolean; error?: string }> {
+  if (!isSupabaseConfigured()) return { ok: false };
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false };
+
+  const cleaned = goals.map((g) => g.trim()).filter(Boolean);
+
+  const { error } = await supabase
+    .from("projects")
+    .update({ goals: cleaned, updated_at: new Date().toISOString() })
+    .eq("id", projectId)
+    .eq("user_id", user.id);
+
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/dashboard/projects/${projectId}`);
+  return { ok: true };
+}
+
 /**
  * Delete a project row and redirect back to the projects list.
  */

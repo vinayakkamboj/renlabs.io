@@ -34,7 +34,7 @@ export function Panel({
   children,
   padded = true,
 }: {
-  title?: string;
+  title?: React.ReactNode;
   meta?: React.ReactNode;
   className?: string;
   children: React.ReactNode;
