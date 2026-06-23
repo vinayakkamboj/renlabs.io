@@ -1,517 +1,499 @@
 "use server";
 
-/**
- * Autonomous agent runner — the execution engine behind the Agents tab.
- *
- * A run does real work, not a simulation:
- *   1. Picks a queued task (or runs an explicit one).
- *   2. Loads the project's current files and the agent's memory.
- *   3. Calls Astra with the real builder prompt.
- *   4. For code roles: parses the file-patch block, validates it, applies it to
- *      the project, and persists the new files to `project_files`.
- *   5. Writes a real report describing what changed.
- *   6. Reflection pass: re-reads the project and queues concrete follow-up tasks
- *      for the areas that still need development.
- *   7. Updates agent memory + last_run_at and logs activity.
- *
- * Everything is gated by the signed-in user and RLS — an agent can only ever
- * touch its own owner's project.
- */
-
-import { revalidatePath } from "next/cache";
-import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
-import { completeAstraText, isAstraConfigured } from "@/lib/ai/astra";
-import { buildEditPrompt, buildNewProjectPrompt } from "@/lib/builder/prompts";
-import { buildContextPack } from "@/lib/builder/context";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { streamAstraText, type ChatMsg } from "@/lib/ai/astra";
 import {
   parseFilePatchPlan,
-  detectFatalIssues,
   applyPatchPlan,
+  detectFatalIssues,
   describeFatalIssues,
 } from "@/lib/builder/file-patches";
+import { buildEditPrompt, buildRepairPrompt } from "@/lib/builder/prompts";
+import { logActivity, setTaskStatus } from "./agents";
 import { ROLE_PRESETS } from "@/lib/data/agents";
-import type { AgentRole } from "@/lib/data/agents";
+import { decryptSecret } from "@/lib/crypto/secrets";
+import type { Agent, AgentTask, TaskStatus, TaskPriority } from "@/lib/data/agents";
 import type { ProjectFile } from "@/lib/builder/types";
-import { logActivity } from "@/lib/actions/agents";
 
-/** Roles that write code into the project. Others produce written reports. */
-const CODE_ROLES: AgentRole[] = ["developer", "qa", "design", "ops"];
-
-const MAX_OUTPUT_TOKENS = 32_000;
-
-interface RunResult {
+export interface RunAgentTaskResult {
   ok: boolean;
   error?: string;
-  reportId?: string;
   filesChanged?: number;
   followUpTasks?: number;
+  reportId?: string;
 }
 
-export async function runAgentTask(
-  agentId: string,
-  taskId?: string,
-): Promise<RunResult> {
-  if (!isSupabaseConfigured()) return { ok: false, error: "Supabase not configured." };
-  if (!isAstraConfigured()) return { ok: false, error: "Astra is not configured." };
+interface AgentContext {
+  userId: string;
+  agent: Agent;
+  project: { id: string; name: string };
+  task: AgentTask | null;
+  files: ProjectFile[];
+  /** A short description of the project's connected Supabase schema, if any. */
+  schemaSummary: string | null;
+  supabase: ReturnType<typeof createAdminClient>;
+}
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { ok: false, error: "Not signed in." };
+/**
+ * Read the project's connected Supabase backend (via the admin client, since the
+ * runner has no user session) and summarize its tables/columns for the model.
+ * Returns null when no backend is connected. Credentials are decrypted only here
+ * and never leave the server.
+ */
+async function loadSchemaSummary(
+  supabase: ReturnType<typeof createAdminClient>,
+  userId: string,
+  projectId: string,
+): Promise<string | null> {
+  try {
+    const { data } = await supabase
+      .from("user_integrations")
+      .select("config")
+      .eq("user_id", userId)
+      .eq("kind", "supabase")
+      .eq("project_id", projectId)
+      .maybeSingle();
+    if (!data) return null;
 
-  // ── Load the agent (RLS scopes this to the owner) ──────────────────────────
-  const { data: agentRow } = await supabase
+    const cfg = data.config as Record<string, string>;
+    const projectUrl = cfg.project_url ?? "";
+    const key = decryptSecret(cfg.service_role_key ?? "") || decryptSecret(cfg.anon_key ?? "");
+    if (!projectUrl || !key) return null;
+
+    const res = await fetch(`${projectUrl}/rest/v1/`, {
+      headers: { apikey: key, Authorization: `Bearer ${key}` },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return null;
+
+    const spec = (await res.json()) as {
+      definitions?: Record<string, { properties?: Record<string, { type?: string; format?: string }> }>;
+    };
+    const tables = Object.entries(spec.definitions ?? {});
+    if (tables.length === 0) return null;
+
+    const lines = tables.map(([name, def]) => {
+      const cols = Object.entries(def.properties ?? {})
+        .map(([col, info]) => `${col} ${info.format ?? info.type ?? "unknown"}`)
+        .join(", ");
+      return `- ${name}(${cols})`;
+    });
+    return `The project is connected to a Supabase backend with this schema:\n${lines.join("\n")}`;
+  } catch {
+    return null;
+  }
+}
+
+async function loadContext(agentId: string, taskId?: string): Promise<AgentContext | null> {
+  const supabase = createAdminClient();
+
+  const { data: agentRow, error: agentError } = await supabase
     .from("agents")
     .select("*")
     .eq("id", agentId)
-    .eq("user_id", user.id)
-    .maybeSingle();
-  if (!agentRow) return { ok: false, error: "Agent not found." };
+    .single();
 
-  const role = agentRow.role as AgentRole;
-  const projectId = agentRow.project_id as string;
-  const goal: string =
-    agentRow.goal ?? ROLE_PRESETS[role]?.defaultGoal ?? "Improve the project.";
-  const memory = (agentRow.memory ?? {}) as Record<string, unknown>;
+  if (agentError || !agentRow) return null;
 
-  // ── Pick the task to run ───────────────────────────────────────────────────
-  let task: { id: string; title: string; detail: string | null } | null = null;
+  const userId = agentRow.user_id as string;
+
+  const { data: project, error: projectError } = await supabase
+    .from("projects")
+    .select("id, name")
+    .eq("id", agentRow.project_id)
+    .single();
+
+  if (projectError || !project) return null;
+
+  // Helper to map task rows to AgentTask
+  const mapTask = (row: Record<string, unknown>): AgentTask => ({
+    id: row.id as string,
+    projectId: row.project_id as string,
+    agentId: (row.agent_id as string) || null,
+    title: row.title as string,
+    detail: (row.detail as string) || null,
+    status: row.status as TaskStatus,
+    priority: row.priority as TaskPriority,
+    createdAt: row.created_at as string,
+    updatedAt: row.updated_at as string,
+    completedAt: (row.completed_at as string) || null,
+  });
+
+  // Pick a task: if taskId provided, use it; else find first queued task assigned to this agent
+  let task: AgentTask | null = null;
   if (taskId) {
-    const { data } = await supabase
+    const { data: specificTask } = await supabase
       .from("agent_tasks")
-      .select("id, title, detail")
+      .select("*")
       .eq("id", taskId)
-      .eq("user_id", user.id)
-      .maybeSingle();
-    task = data ?? null;
+      .eq("agent_id", agentId)
+      .single();
+    task = specificTask ? mapTask(specificTask) : null;
   } else {
-    // Next queued task assigned to this agent, else any queued task on the project.
-    const { data } = await supabase
+    const { data: tasks } = await supabase
       .from("agent_tasks")
-      .select("id, title, detail, agent_id")
-      .eq("user_id", user.id)
-      .eq("project_id", projectId)
+      .select("*")
+      .eq("agent_id", agentId)
       .eq("status", "queued")
+      .order("priority", { ascending: false })
       .order("created_at", { ascending: true })
-      .limit(20);
-    const rows = data ?? [];
-    task =
-      rows.find((r) => r.agent_id === agentId) ??
-      rows.find((r) => r.agent_id === null) ??
-      null;
+      .limit(1);
+    task = tasks?.[0] ? mapTask(tasks[0]) : null;
   }
 
-  // No explicit task: synthesize one from the agent's standing goal so a run is
-  // never a no-op. The agent works toward its objective directly.
-  const taskTitle = task?.title ?? goal;
-  const taskDetail = task?.detail ?? null;
-
-  if (task) {
-    await supabase
-      .from("agent_tasks")
-      .update({ status: "in_progress", updated_at: new Date().toISOString() })
-      .eq("id", task.id)
-      .eq("user_id", user.id);
-  }
-
-  // ── Load project files ─────────────────────────────────────────────────────
-  const { data: fileRows } = await supabase
+  // Load project files
+  const { data: files, error: filesError } = await supabase
     .from("project_files")
-    .select("path, content")
-    .eq("project_id", projectId);
-  const files: ProjectFile[] = (fileRows ?? []) as ProjectFile[];
-  const isFirstBuild = files.length === 0;
+    .select("id, path, content, language")
+    .eq("project_id", agentRow.project_id)
+    .order("path");
 
-  const memoryNote =
-    Object.keys(memory).length > 0
-      ? `\n\n## Your memory from previous runs\n${JSON.stringify(memory, null, 2)}`
-      : "";
+  if (filesError) return null;
 
-  // ── Code roles: real build ─────────────────────────────────────────────────
-  if (CODE_ROLES.includes(role)) {
-    const system = isFirstBuild ? buildNewProjectPrompt() : buildEditPrompt();
-    const contextPack = buildContextPack(files, taskTitle, {});
-    const request = [
-      `You are the **${ROLE_PRESETS[role]?.label ?? role}** working autonomously toward this objective:`,
-      `> ${goal}`,
-      ``,
-      `## Task to complete now`,
-      `**${taskTitle}**`,
-      taskDetail ? `\n${taskDetail}` : "",
-      memoryNote,
-      ``,
-      `Make the change end-to-end and emit the file_patches block.`,
-    ].join("\n");
+  // Load the project's connected Supabase schema (if any) for grounding.
+  const schemaSummary = await loadSchemaSummary(supabase, userId, agentRow.project_id);
 
-    let result = await completeAstraText(
-      [
-        { role: "system", content: system },
-        { role: "user", content: `${contextPack}\n\n---\n\n## Request\n${request}` },
-      ],
-      { temperature: 0.3, maxTokens: MAX_OUTPUT_TOKENS },
-    );
-
-    if (!result.ok) {
-      await failTask(supabase, user.id, task?.id);
-      return { ok: false, error: `Astra error: ${result.detail}` };
-    }
-
-    let plan = parseFilePatchPlan(result.text);
-    let issues = plan ? detectFatalIssues(plan, files, isFirstBuild) : [];
-
-    // One repair pass if the first attempt produced nothing usable or had issues.
-    if (!plan || issues.length > 0) {
-      const repairNote = plan
-        ? `The previous attempt had these issues:\n${describeFatalIssues(issues)}`
-        : "The previous attempt produced no valid file_patches block.";
-      result = await completeAstraText(
-        [
-          { role: "system", content: system },
-          {
-            role: "user",
-            content: `${contextPack}\n\n---\n\n## Request\n${request}\n\n## IMPORTANT — fix and re-emit\n${repairNote}\nRe-emit the COMPLETE file_patches block, correct this time.`,
-          },
-        ],
-        { temperature: 0.3, maxTokens: MAX_OUTPUT_TOKENS },
-      );
-      if (result.ok) {
-        const retried = parseFilePatchPlan(result.text);
-        if (retried) {
-          const retriedIssues = detectFatalIssues(retried, files, isFirstBuild);
-          if (retriedIssues.length < issues.length || issues.length === 0) {
-            plan = retried;
-            issues = retriedIssues;
-          }
-        }
-      }
-    }
-
-    if (!plan || issues.length > 0) {
-      await failTask(supabase, user.id, task?.id);
-      const detail = issues.length ? describeFatalIssues(issues) : "No valid changes produced.";
-      await writeReport(supabase, user.id, {
-        projectId,
-        agentId,
-        taskId: task?.id ?? null,
-        title: `Run blocked: ${taskTitle}`,
-        summary: `The agent could not produce a clean change. ${issues.length} issue(s).`,
-        content: detail,
-      });
-      return { ok: false, error: "The agent could not produce a clean, applicable change." };
-    }
-
-    // Apply + persist the new file set.
-    const nextFiles = applyPatchPlan(files, plan);
-    await persistFiles(supabase, user.id, projectId, nextFiles, plan.deletes ?? []);
-
-    const changedPaths = [
-      ...plan.changes.map((c) => c.path),
-      ...(plan.edits ?? []).map((e) => e.path),
-    ];
-    const uniqueChanged = Array.from(new Set(changedPaths));
-
-    const report = await writeReport(supabase, user.id, {
-      projectId,
-      agentId,
-      taskId: task?.id ?? null,
-      title: plan.plan || `Completed: ${taskTitle}`,
-      summary: `Updated ${uniqueChanged.length} file(s): ${uniqueChanged.slice(0, 6).join(", ")}${uniqueChanged.length > 6 ? "…" : ""}`,
-      content: [
-        `## ${plan.plan || taskTitle}`,
-        ``,
-        `### Files changed`,
-        ...uniqueChanged.map((p) => `- \`${p}\``),
-        ...(plan.deletes?.length ? [``, `### Deleted`, ...plan.deletes.map((p) => `- \`${p}\``)] : []),
-      ].join("\n"),
-    });
-
-    if (task) await completeTask(supabase, user.id, task.id, task.title, agentId, projectId);
-    await finishRun(supabase, user.id, agentId, projectId, {
-      ...memory,
-      lastTask: taskTitle,
-      lastChanged: uniqueChanged.slice(0, 12),
-    });
-
-    // ── Reflection: what still needs development → queue follow-up tasks ──────
-    const followUps = await reflectAndQueue(supabase, user.id, {
-      projectId,
-      agentId,
-      role,
-      goal,
-      files: nextFiles,
-      justDid: plan.plan || taskTitle,
-    });
-
-    revalidatePath(`/dashboard/agents/${agentId}`);
-    revalidatePath(`/dashboard/projects/${projectId}`);
-    revalidatePath(`/workspace/${projectId}`);
-    return {
-      ok: true,
-      reportId: report ?? undefined,
-      filesChanged: uniqueChanged.length,
-      followUpTasks: followUps,
-    };
-  }
-
-  // ── Non-code roles: produce a written report ───────────────────────────────
-  const system = `You are the ${ROLE_PRESETS[role]?.label ?? role} for a software product, working autonomously toward a standing objective. Produce a concise, concrete, professional report in Markdown. No emojis. No filler. Specific, actionable findings only. Start with a one-line summary, then sections with real recommendations.`;
-  const fileList = files.map((f) => f.path).join("\n");
-  const request = [
-    `## Objective`,
-    goal,
-    ``,
-    `## Task`,
-    taskTitle,
-    taskDetail ? `\n${taskDetail}` : "",
-    memoryNote,
-    files.length ? `\n## Current project files\n${fileList}` : "",
-    ``,
-    `Write the report now.`,
-  ].join("\n");
-
-  const result = await completeAstraText(
-    [
-      { role: "system", content: system },
-      { role: "user", content: request },
-    ],
-    { temperature: 0.5, maxTokens: 4_000 },
-  );
-
-  if (!result.ok) {
-    await failTask(supabase, user.id, task?.id);
-    return { ok: false, error: `Astra error: ${result.detail}` };
-  }
-
-  const firstLine = result.text.trim().split("\n")[0].replace(/^#+\s*/, "").slice(0, 120);
-  const report = await writeReport(supabase, user.id, {
-    projectId,
-    agentId,
-    taskId: task?.id ?? null,
-    title: firstLine || `Report: ${taskTitle}`,
-    summary: firstLine,
-    content: result.text.trim(),
-  });
-
-  if (task) await completeTask(supabase, user.id, task.id, task.title, agentId, projectId);
-  await finishRun(supabase, user.id, agentId, projectId, {
-    ...memory,
-    lastTask: taskTitle,
-  });
-
-  revalidatePath(`/dashboard/agents/${agentId}`);
-  revalidatePath(`/dashboard/projects/${projectId}`);
-  return { ok: true, reportId: report ?? undefined };
+  return {
+    schemaSummary,
+    agent: {
+      id: agentRow.id,
+      projectId: agentRow.project_id,
+      name: agentRow.name,
+      role: agentRow.role,
+      goal: agentRow.goal,
+      status: agentRow.status,
+      schedule: agentRow.schedule ?? "manual",
+      budgetCents: agentRow.budget_cents ?? 0,
+      spentCents: agentRow.spent_cents ?? 0,
+      permissions: agentRow.permissions ?? [],
+      lastRunAt: agentRow.last_run_at,
+      createdAt: agentRow.created_at,
+      updatedAt: agentRow.updated_at,
+    },
+    project: { id: project.id, name: project.name },
+    task,
+    files: files || [],
+    userId,
+    supabase,
+  };
 }
 
-// ─── Reflection ────────────────────────────────────────────────────────────────
-
-/**
- * After a code change, ask Astra to read the current project and name the
- * concrete areas that still need development, then queue them as tasks. This is
- * what makes the agent iterative — each run leaves a backlog of real next steps.
- */
-async function reflectAndQueue(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  userId: string,
-  ctx: {
-    projectId: string;
-    agentId: string;
-    role: AgentRole;
-    goal: string;
-    files: ProjectFile[];
-    justDid: string;
-  },
-): Promise<number> {
-  // Don't pile up an unbounded backlog — only queue follow-ups if the project
-  // has few open tasks already.
-  const { count } = await supabase
-    .from("agent_tasks")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", userId)
-    .eq("project_id", ctx.projectId)
-    .eq("status", "queued");
-  if ((count ?? 0) >= 6) return 0;
-
-  const fileList = ctx.files.map((f) => f.path).join("\n");
-  const system = `You are a senior engineer reviewing a React + Vite + Tailwind project to plan the next iteration. Given the project's files and what was just completed, identify the highest-value concrete next steps that move toward the objective. Respond with ONLY a JSON array of 1-3 short task titles (imperative, specific, each buildable in one pass), e.g. ["Add a checkout page with order summary","Wire the cart store to the product grid"]. No prose, no markdown fences, just the JSON array.`;
-  const user = [
-    `## Objective`,
-    ctx.goal,
-    ``,
-    `## Just completed`,
-    ctx.justDid,
-    ``,
-    `## Current files`,
-    fileList,
-    ``,
-    `List the next 1-3 tasks as a JSON array.`,
-  ].join("\n");
-
-  const result = await completeAstraText(
-    [
-      { role: "system", content: system },
-      { role: "user", content: user },
-    ],
-    { temperature: 0.4, maxTokens: 600 },
-  );
-  if (!result.ok) return 0;
-
-  const titles = parseTaskTitles(result.text);
-  if (titles.length === 0) return 0;
-
-  let queued = 0;
-  for (const title of titles.slice(0, 3)) {
-    const { error } = await supabase.from("agent_tasks").insert({
-      user_id: userId,
-      project_id: ctx.projectId,
-      agent_id: ctx.agentId,
-      title,
-      priority: "medium",
-    });
-    if (!error) queued++;
-  }
-
-  if (queued > 0) {
-    await logActivity({
-      projectId: ctx.projectId,
-      agentId: ctx.agentId,
-      kind: "task_created",
-      message: `Agent identified ${queued} follow-up task(s) for the next iteration.`,
-    });
-  }
-  return queued;
-}
-
-/** Pull a JSON array of strings out of a (possibly fenced) model response. */
-function parseTaskTitles(text: string): string[] {
-  const match = text.match(/\[[\s\S]*\]/);
-  if (!match) return [];
-  try {
-    const arr = JSON.parse(match[0]) as unknown;
-    if (!Array.isArray(arr)) return [];
-    return arr
-      .filter((x): x is string => typeof x === "string")
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0 && s.length <= 140);
-  } catch {
-    return [];
-  }
-}
-
-// ─── Persistence helpers ────────────────────────────────────────────────────────
-
-async function persistFiles(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+async function saveFiles(
   userId: string,
   projectId: string,
   files: ProjectFile[],
-  deletes: string[],
-): Promise<void> {
-  if (deletes.length) {
-    await supabase
-      .from("project_files")
-      .delete()
-      .eq("project_id", projectId)
-      .in("path", deletes);
+  supabase: ReturnType<typeof createAdminClient>,
+): Promise<boolean> {
+  try {
+    for (const file of files) {
+      await supabase.from("project_files").upsert(
+        {
+          user_id: userId,
+          project_id: projectId,
+          path: file.path,
+          content: file.content,
+          language: file.language || detectLanguage(file.path),
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "project_id,path" },
+      );
+    }
+    return true;
+  } catch {
+    return false;
   }
-  const rows = files.map((f) => ({
-    project_id: projectId,
-    user_id: userId,
-    path: f.path,
-    content: f.content,
-  }));
-  await supabase.from("project_files").upsert(rows, { onConflict: "project_id,path" });
 }
 
-async function writeReport(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  userId: string,
-  input: {
-    projectId: string;
-    agentId: string;
-    taskId: string | null;
-    title: string;
-    summary: string;
-    content: string;
-  },
-): Promise<string | null> {
-  const { data } = await supabase
-    .from("agent_reports")
-    .insert({
-      user_id: userId,
-      project_id: input.projectId,
-      agent_id: input.agentId,
-      task_id: input.taskId,
-      title: input.title.slice(0, 200),
-      summary: input.summary.slice(0, 400),
-      content: input.content,
-    })
-    .select("id")
-    .single();
-
-  await logActivity({
-    projectId: input.projectId,
-    agentId: input.agentId,
-    kind: "report_generated",
-    message: `New report: ${input.title.slice(0, 120)}`,
-  });
-  return data?.id ?? null;
+function detectLanguage(path: string): string | null {
+  const ext = path.split(".").pop()?.toLowerCase();
+  const langMap: Record<string, string> = {
+    ts: "typescript",
+    tsx: "typescript",
+    js: "javascript",
+    jsx: "javascript",
+    css: "css",
+    html: "html",
+    json: "json",
+  };
+  return langMap[ext || ""] || null;
 }
 
-async function completeTask(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  userId: string,
-  taskId: string,
-  title: string,
+async function buildPrompt(ctx: AgentContext): Promise<ChatMsg[]> {
+  const preset = ROLE_PRESETS[ctx.agent.role];
+
+  // For code-generating roles, build files context
+  const isCodeRole = ["developer", "qa", "design", "ops"].includes(ctx.agent.role);
+  const fileContext = isCodeRole
+    ? `\n\n## Current project files\n\`\`\`\n${ctx.files.map((f) => `${f.path}:\n${f.content}`).join("\n\n")}\n\`\`\``
+    : "";
+
+  const taskContext = ctx.task ? `\nCurrent task: ${ctx.task.title}${ctx.task.detail ? `\n${ctx.task.detail}` : ""}` : "";
+
+  // Ground the model in the project's real backend schema when one is connected.
+  const schemaContext = ctx.schemaSummary
+    ? `\n\n## Connected backend\n${ctx.schemaSummary}\nWrite queries and types that match this schema exactly.`
+    : "";
+
+  const userMessage =
+    ctx.task?.detail ||
+    ctx.task?.title ||
+    ctx.agent.goal ||
+    preset?.defaultGoal ||
+    `Improve and develop the ${ctx.project.name} project.`;
+
+  return [
+    {
+      role: "user",
+      content: userMessage + schemaContext + fileContext + taskContext,
+    },
+  ];
+}
+
+async function executeAgent(ctx: AgentContext): Promise<{
+  plan: string;
+  changedFiles: ProjectFile[];
+  reportContent: string;
+}> {
+  const isCodeRole = ["developer", "qa", "design", "ops"].includes(ctx.agent.role);
+
+  if (!isCodeRole) {
+    // Non-code roles: generate a report only
+    const messages = await buildPrompt(ctx);
+    const prompt = `${buildEditPrompt()}\n\nGenerate a markdown report (2-3 paragraphs) summarizing your assessment and recommendations for the ${ctx.project.name} project.`;
+
+    const result = await streamAstraText([{ ...messages[0], role: "user", content: prompt + "\n" + messages[0].content }]);
+    if (!result.ok) throw new Error(`Astra error: ${result.detail}`);
+
+    // Drain stream to string
+    const content = await drainStream(result.stream);
+
+    return {
+      plan: "Report generated",
+      changedFiles: [],
+      reportContent: content,
+    };
+  }
+
+  // Code roles: generate file patches, with one automatic repair pass
+  const messages = await buildPrompt(ctx);
+  const systemPrompt = buildEditPrompt();
+
+  const response = await streamAstraText([
+    { role: "system", content: systemPrompt },
+    ...messages,
+  ]);
+
+  if (!response.ok) throw new Error(`Astra error: ${response.detail}`);
+
+  let content = await drainStream(response.stream);
+
+  // Parse and validate
+  let plan = parseFilePatchPlan(content);
+  if (!plan) {
+    return {
+      plan: "No file changes detected",
+      changedFiles: [],
+      reportContent: "The agent did not produce any file changes.",
+    };
+  }
+
+  // Apply patches to create modified file list
+  const modified = applyPatchPlan(ctx.files, plan);
+  let issues = detectFatalIssues(plan, modified, false);
+
+  // One automatic repair pass
+  if (issues.length > 0) {
+    const issueDesc = describeFatalIssues(issues);
+    const repairMessages: ChatMsg[] = [
+      { role: "system", content: buildRepairPrompt(issueDesc) },
+      ...messages,
+    ];
+
+    const repairResult = await streamAstraText(repairMessages);
+    if (!repairResult.ok) throw new Error(`Repair failed: ${repairResult.detail}`);
+
+    content = await drainStream(repairResult.stream);
+    plan = parseFilePatchPlan(content);
+    if (!plan) throw new Error("Repair produced no valid patches");
+
+    const repaired = applyPatchPlan(ctx.files, plan);
+    issues = detectFatalIssues(plan, repaired, false);
+    if (issues.length > 0) throw new Error(`Repair still has issues: ${describeFatalIssues(issues)}`);
+
+    return {
+      plan: plan.plan,
+      changedFiles: repaired,
+      reportContent: `Repaired and applied changes:\n${plan.plan}`,
+    };
+  }
+
+  return {
+    plan: plan.plan,
+    changedFiles: modified,
+    reportContent: `Applied changes:\n${plan.plan}`,
+  };
+}
+
+async function reflectAndQueueTasks(
+  ctx: AgentContext,
+  changedFiles: ProjectFile[],
+): Promise<string[]> {
+  if (!["developer", "qa", "design"].includes(ctx.agent.role)) return [];
+
+  // Call Astra to read the changed project and suggest follow-up tasks
+  const fileSnippet = changedFiles
+    .slice(0, 5)
+    .map((f) => `${f.path}: ${f.content.slice(0, 300)}...`)
+    .join("\n");
+
+  const messages: ChatMsg[] = [
+    {
+      role: "user",
+      content: `Based on these changes to the ${ctx.project.name} project:\n\n${fileSnippet}\n\nSuggest 1-3 concrete next tasks to continue development. Return ONLY a JSON array of task titles, like: ["Add user authentication", "Implement database schema", "Create dashboard page"]`,
+    },
+  ];
+
+  const result = await streamAstraText(messages);
+  if (!result.ok) return [];
+
+  const content = await drainStream(result.stream);
+
+  // Extract JSON array
+  let tasks: string[] = [];
+  try {
+    const match = content.match(/\[[\s\S]*\]/);
+    if (match) {
+      tasks = JSON.parse(match[0]).filter((t: unknown) => typeof t === "string").slice(0, 3);
+    }
+  } catch {
+    // ignore parse errors
+  }
+
+  // Insert tasks
+  const createdIds: string[] = [];
+  for (const title of tasks) {
+    const { data, error } = await ctx.supabase
+      .from("agent_tasks")
+      .insert({
+        user_id: ctx.userId,
+        project_id: ctx.project.id,
+        agent_id: ctx.agent.id,
+        title,
+        status: "queued",
+        priority: "medium",
+      })
+      .select("id");
+
+    if (!error && Array.isArray(data) && data[0]) {
+      createdIds.push((data[0] as { id: string }).id);
+    }
+  }
+
+  return createdIds;
+}
+
+async function drainStream(stream: ReadableStream<Uint8Array>): Promise<string> {
+  const reader = stream.getReader();
+  const chunks: string[] = [];
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(new TextDecoder().decode(value));
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return chunks.join("");
+}
+
+/**
+ * Execute one autonomous run of an agent: pick a task, make code/report changes,
+ * queue follow-up work, and persist everything.
+ */
+export async function runAgentTask(
   agentId: string,
-  projectId: string,
-): Promise<void> {
-  await supabase
-    .from("agent_tasks")
-    .update({
-      status: "done",
-      completed_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", taskId)
-    .eq("user_id", userId);
-  await logActivity({
-    projectId,
-    agentId,
-    kind: "task_completed",
-    message: `Task completed: ${title}`,
-  });
-}
-
-async function failTask(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  userId: string,
   taskId?: string,
-): Promise<void> {
-  if (!taskId) return;
-  await supabase
-    .from("agent_tasks")
-    .update({ status: "failed", updated_at: new Date().toISOString() })
-    .eq("id", taskId)
-    .eq("user_id", userId);
-}
+): Promise<RunAgentTaskResult> {
+  try {
+    // Load context
+    const ctx = await loadContext(agentId, taskId);
+    if (!ctx) {
+      return { ok: false, error: "Agent or project not found" };
+    }
 
-async function finishRun(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  userId: string,
-  agentId: string,
-  projectId: string,
-  memory: Record<string, unknown>,
-): Promise<void> {
-  await supabase
-    .from("agents")
-    .update({
-      last_run_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      status: "active",
-      memory,
-    })
-    .eq("id", agentId)
-    .eq("user_id", userId);
+    // If no task and not code-generating, nothing to do
+    if (!ctx.task && !["developer", "qa", "design", "ops"].includes(ctx.agent.role)) {
+      return { ok: false, error: "No task queued for this agent" };
+    }
+
+    // Execute
+    const { plan, changedFiles, reportContent } = await executeAgent(ctx);
+
+    // Save files
+    if (changedFiles.length > 0) {
+      const saved = await saveFiles(ctx.userId, ctx.project.id, changedFiles, ctx.supabase);
+      if (!saved) {
+        return { ok: false, error: "Failed to save files" };
+      }
+    }
+
+    // Mark task in progress then done
+    if (ctx.task) {
+      await setTaskStatus(ctx.task.id, "in_progress");
+      await setTaskStatus(ctx.task.id, "done");
+    }
+
+    // Write report
+    const { data: reportData } = await ctx.supabase
+      .from("agent_reports")
+      .insert({
+        user_id: ctx.userId,
+        project_id: ctx.project.id,
+        agent_id: ctx.agent.id,
+        task_id: ctx.task?.id || null,
+        title: plan,
+        content: reportContent,
+      })
+      .select("id")
+      .single();
+
+    const reportId = reportData?.id;
+
+    // Reflect and queue follow-ups
+    const followUpIds = await reflectAndQueueTasks(ctx, changedFiles);
+
+    // Update agent lastRunAt and memory
+    await ctx.supabase
+      .from("agents")
+      .update({
+        last_run_at: new Date().toISOString(),
+        memory: {
+          lastTask: ctx.task?.id,
+          lastChangedFiles: changedFiles.map((f) => f.path),
+          lastReportId: reportId,
+        },
+      })
+      .eq("id", ctx.agent.id);
+
+    // Log activity
+    await logActivity({
+      projectId: ctx.project.id,
+      agentId: ctx.agent.id,
+      kind: "report_generated",
+      message: `${ctx.agent.name} completed a run: ${plan}`,
+    });
+
+    return {
+      ok: true,
+      filesChanged: changedFiles.length,
+      followUpTasks: followUpIds.length,
+      reportId,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: msg };
+  }
 }

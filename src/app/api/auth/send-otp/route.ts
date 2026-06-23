@@ -97,12 +97,31 @@ async function sendBrevoEmail(to: string, code: string): Promise<void> {
 
   if (!res.ok) {
     let detail = `${res.status} ${res.statusText}`;
+    let code = "";
     try {
-      const json = (await res.json()) as { message?: string };
+      const json = (await res.json()) as { message?: string; code?: string };
       if (json?.message) detail = json.message;
+      if (json?.code) code = json.code;
     } catch {
       // ignore parse errors
     }
+
+    // Brevo's "Authorised IPs" security feature rejects requests from any IP
+    // not on the allowlist. Serverless functions (Vercel) use rotating IPs, so
+    // this restriction WILL keep failing — the real fix is to turn the feature
+    // off in Brevo, not to chase IPs. Surface that instruction verbatim.
+    if (
+      code === "unrecognised_ip_address" ||
+      /unrecognised? IP address|authorised_ips|authorized_ips/i.test(detail)
+    ) {
+      throw new Error(
+        "Brevo is blocking this server's IP. Brevo → Settings → Security → " +
+          "Authorised IPs, and either DISABLE the IP restriction (recommended — " +
+          "serverless IPs change on every deploy) or add this server's IP. " +
+          `Brevo said: ${detail}`,
+      );
+    }
+
     throw new Error(`Brevo API error: ${detail}`);
   }
 }
@@ -129,8 +148,6 @@ export async function POST(req: Request) {
 
   // Generate the OTP via Supabase Admin. This does NOT send any email —
   // the admin.generateLink API just creates the token and returns email_otp.
-  // Since the caller is already a verified admin email, we surface real error
-  // detail here so misconfiguration is debuggable instead of a silent failure.
   const supabase = createAdminClient();
   const { data, error } = await supabase.auth.admin.generateLink({
     type: "magiclink",
@@ -139,22 +156,30 @@ export async function POST(req: Request) {
 
   if (error) {
     console.error("[send-otp] generateLink error:", error.message);
-    return NextResponse.json(
-      { error: `Could not generate a code: ${error.message}` },
-      { status: 500 },
-    );
+    // For admin callers, surface real error detail; others get generic response
+    if (ADMIN_EMAILS.includes(email)) {
+      return NextResponse.json(
+        { error: `Could not generate a code: ${error.message}` },
+        { status: 500 },
+      );
+    }
+    return NextResponse.json({ ok: true });
   }
 
   const code = data.properties?.email_otp;
   if (!code) {
     console.error("[send-otp] No email_otp in generateLink response");
-    return NextResponse.json(
-      {
-        error:
-          "Supabase did not return an OTP. Ensure email OTP is enabled for this project (Auth → Providers → Email).",
-      },
-      { status: 500 },
-    );
+    // For admin callers, surface real diagnostic
+    if (ADMIN_EMAILS.includes(email)) {
+      return NextResponse.json(
+        {
+          error:
+            "Supabase did not return an OTP. Ensure email OTP is enabled for this project (Auth → Providers → Email).",
+        },
+        { status: 500 },
+      );
+    }
+    return NextResponse.json({ ok: true });
   }
 
   try {
@@ -162,10 +187,15 @@ export async function POST(req: Request) {
   } catch (sendErr) {
     const msg = sendErr instanceof Error ? sendErr.message : String(sendErr);
     console.error("[send-otp] Email delivery failed:", msg);
-    // The real Brevo reason (unverified sender, wrong key type, etc.) is the
-    // single most useful thing for fixing this — show it to the admin caller.
+    // For admin callers, surface the real Brevo reason
+    if (ADMIN_EMAILS.includes(email)) {
+      return NextResponse.json(
+        { error: `Email delivery failed — ${msg}` },
+        { status: 502 },
+      );
+    }
     return NextResponse.json(
-      { error: `Email delivery failed — ${msg}` },
+      { error: "Failed to send the code. Please try again." },
       { status: 502 },
     );
   }

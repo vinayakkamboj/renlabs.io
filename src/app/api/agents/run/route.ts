@@ -1,11 +1,11 @@
 /**
- * POST /api/agents/run  — execute one autonomous agent run.
+ * POST /api/agents/run — execute one autonomous agent run.
  *
  * Body: { agentId: string, taskId?: string }
  *
  * A run makes multiple model calls (build + repair + reflection), so it needs a
  * generous execution budget. Auth and RLS are enforced inside runAgentTask via
- * the cookie-based Supabase client — the body never carries identity.
+ * the admin Supabase client (which checks ownership via the project's user_id).
  */
 
 export const runtime = "nodejs";

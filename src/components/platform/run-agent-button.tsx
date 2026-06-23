@@ -12,12 +12,6 @@ interface RunResponse {
   followUpTasks?: number;
 }
 
-/**
- * Triggers one autonomous run of the agent. The agent picks up its next queued
- * task (or works toward its goal), makes a real change, writes a report, and
- * queues follow-up work. Long-running, so we show progress and disable re-entry.
- * Routed through /api/agents/run (maxDuration 300s) so it never times out.
- */
 export function RunAgentButton({ agentId }: { agentId: string }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
