@@ -10,16 +10,16 @@ const ease = [0.25, 1, 0.5, 1] as const;
 
 const pillars = [
   {
-    label: "Code generation",
-    detail: "From prompt to production-ready codebase — scaffolded correctly the first time.",
+    label: "Workspaces & projects",
+    detail: "Organize everything you're building. Each project keeps its own goals, memory, and context.",
   },
   {
-    label: "Repo understanding",
-    detail: "Reads your architecture, dependencies, and conventions before changing anything.",
+    label: "AI agent teams",
+    detail: "Assign specialized agents — research, development, QA, marketing — each with a role, goal, and budget.",
   },
   {
-    label: "Astra API",
-    detail: "Integrate the same model directly into your products via a simple REST API.",
+    label: "Reports & oversight",
+    detail: "Agents execute continuously and report progress, so you manage outcomes instead of prompts.",
   },
 ];
 
@@ -56,24 +56,24 @@ export function Hero() {
             <span className="size-1.5 animate-pulse rounded-full bg-bronze" />
           </span>
           <p className="font-mono text-[11px] uppercase tracking-eyebrow text-bronze">
-            Ren Labs · AI development platform
+            Ren Labs · AI workspace platform
           </p>
         </motion.div>
 
         <motion.h1
           {...enter(0.08)}
-          className="mt-8 max-w-[20ch] font-serif text-display-xl font-normal text-ink text-balance"
+          className="mt-8 max-w-[18ch] font-serif text-display-xl font-normal text-ink text-balance"
         >
-          Build AI-native products at enterprise pace.
+          Create projects. Deploy AI teams.
         </motion.h1>
 
         <motion.p
           {...enter(0.16)}
           className="mt-6 max-w-[52ch] text-lede text-graphite text-pretty"
         >
-          Made for enterprise startups building AI-native solutions — Ren Labs
-          pairs a frontier-grade coding model with a full software engineering
-          workspace, so your team ships without growing headcount.
+          Ren Labs is the AI workspace where you spin up projects and assign
+          autonomous agents to build, test, and ship them. Research, development,
+          and QA agents work in parallel on the goals you set — and report back.
         </motion.p>
 
         <motion.div {...enter(0.26)} className="mt-12 flex flex-wrap items-center gap-4">

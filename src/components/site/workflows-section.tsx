@@ -10,13 +10,13 @@ export function WorkflowsSection() {
     <section className="border-t border-line bg-paper py-28 md:py-36" id="platform">
       <Container>
         <SectionHeading
-          eyebrow="The platform"
+          eyebrow="How it works"
           title={
             <>
-              One platform. <em className="text-bronze-deep">Every stage of the build.</em>
+              One workspace. <em className="text-bronze-deep">A team of agents.</em>
             </>
           }
-          lede="From the first line of code to production — Ren Labs handles the engineering so your team focuses on the product."
+          lede="Create a project, assign agents to it, and let them execute. Ren Labs coordinates the engineering so your team manages outcomes — not prompts."
         />
 
         <div className="mt-16 grid gap-px overflow-hidden rounded-2xl border border-line bg-line lg:grid-cols-2">
@@ -25,11 +25,11 @@ export function WorkflowsSection() {
             <div className="flex size-11 items-center justify-center rounded-xl border border-line bg-paper-raised">
               <Layers className="size-5 text-bronze" strokeWidth={1.6} />
             </div>
-            <h3 className="mt-6 font-serif text-headline text-ink">Ren Code</h3>
+            <h3 className="mt-6 font-serif text-headline text-ink">Projects &amp; agents</h3>
             <p className="mt-3 max-w-[44ch] text-[15px] leading-relaxed text-graphite text-pretty">
-              A full software engineering workspace. Describe what you need —
-              new features, refactors, entire products — and Ren Code ships
-              reviewable code your team owns.
+              Spin up a project, set its goals, and assign agents to it. Describe
+              what you need — new features, refactors, entire products — and your
+              agents ship reviewable work your team owns.
             </p>
             <ul className="mt-7 space-y-2.5">
               {newProjectExamples.map((ex) => (
@@ -58,15 +58,15 @@ export function WorkflowsSection() {
               <Cpu className="size-5 text-bronze" strokeWidth={1.6} />
             </div>
             <div className="mt-6 flex items-center gap-3">
-              <h3 className="font-serif text-headline text-ink">Astra API</h3>
+              <h3 className="font-serif text-headline text-ink">Developer API</h3>
               <span className="rounded-full bg-bronze-wash px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.1em] text-bronze-deep">
-                For your product
+                Infrastructure
               </span>
             </div>
             <p className="mt-3 max-w-[44ch] text-[15px] leading-relaxed text-graphite text-pretty">
-              Integrate Astra directly into your own applications. The same model
-              powering Ren Code — exposed as a clean REST API with streaming,
-              tool use, and the low latency your product demands.
+              The engine behind the workspace, exposed for your own applications —
+              a clean REST API with streaming, tool use, and the low latency your
+              product demands.
             </p>
             <div className="mt-7 grid grid-cols-2 gap-x-6 gap-y-2.5">
               {[

@@ -5,7 +5,12 @@ import { PhilosophySection } from "@/components/site/philosophy-section";
 import { Container } from "@/components/ui/container";
 import { Reveal } from "@/components/ui/reveal";
 import { Button } from "@/components/ui/button";
+import { showBenchmarks, showModelMarketing } from "@/lib/flags";
 
+/**
+ * Benchmark stat strip. Kept for future use but gated behind `showBenchmarks()`
+ * — we no longer lead with model benchmarks, so this does not render by default.
+ */
 function EnterpriseSection() {
   const signals = [
     { stat: "79.3%", label: "LiveCodeBench", sub: "ahead of Opus 4.8, GPT-5.4 & Gemini" },
@@ -49,15 +54,15 @@ function ClosingSection() {
             Ren Labs
           </p>
           <h2 className="mt-6 font-serif text-display font-normal text-ink text-balance">
-            Your AI engineering team, ready on day one.
+            Your AI workspace, working while you sleep.
           </h2>
           <p className="mx-auto mt-6 max-w-[46ch] text-lede text-graphite">
-            Enterprise startups move fast. Ren Labs makes sure your engineering
-            keeps up — without scaling headcount to match.
+            Spin up a project, assign your agents, and let them execute. You
+            manage outcomes — not prompts.
           </p>
           <div className="mt-10 flex flex-wrap justify-center gap-4">
             <Button href="/dashboard" size="lg">
-              Start building
+              Create a workspace
             </Button>
             <Button href="/docs" variant="outline" size="lg">
               Read the docs
@@ -74,8 +79,10 @@ export default function HomePage() {
     <>
       <Hero />
       <WorkflowsSection />
-      <EnterpriseSection />
-      <ResearchModelSection />
+      {/* Positioning: benchmarks and the Astra model are infrastructure, not the
+          lead message. Both sections are kept but gated off by default. */}
+      {showBenchmarks() && <EnterpriseSection />}
+      {showModelMarketing() && <ResearchModelSection />}
       <PhilosophySection />
       <ClosingSection />
     </>
