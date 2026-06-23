@@ -6,6 +6,7 @@ import { readGitHubSession } from "@/lib/github/session";
 import { loadRepositoryFiles } from "@/lib/builder/github-loader";
 import { createBaseTemplate } from "@/lib/builder/base-template";
 import { WorkspaceShell } from "@/components/workspace/workspace-shell";
+import { getSupabaseIntegration } from "@/lib/actions/integrations";
 import type { ProjectFile } from "@/lib/builder/types";
 
 export const metadata: Metadata = { title: "Workspace" };
@@ -34,6 +35,8 @@ export default async function WorkspacePage({ params }: PageProps) {
         repoDefaultBranch={null}
         initialFiles={createBaseTemplate()}
         hadFirstBuild={false}
+        supabaseConnected={false}
+        supabaseUrl={null}
       />
     );
   }
@@ -44,10 +47,9 @@ export default async function WorkspacePage({ params }: PageProps) {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  // Fetch the project and any saved files in parallel. Access is enforced by
-  // RLS (owner or accepted collaborator), so we don't filter by user_id here —
-  // that's what lets invited collaborators open a shared project. Running both
-  // queries together also removes a full network round-trip from the load.
+  // Fetch project, saved files, and Supabase integration in parallel.
+  const supabaseIntegration = await getSupabaseIntegration();
+
   const [projectResult, savedResult] = await Promise.all([
     supabase
       .from("projects")
@@ -108,6 +110,8 @@ export default async function WorkspacePage({ params }: PageProps) {
       repoDefaultBranch={repo?.default_branch ?? null}
       initialFiles={initialFiles}
       hadFirstBuild={hadFirstBuild}
+      supabaseConnected={!!supabaseIntegration}
+      supabaseUrl={supabaseIntegration?.projectUrl ?? null}
     />
   );
 }

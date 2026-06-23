@@ -13,6 +13,7 @@ import {
   ArrowLeft,
   Code2,
   Columns2,
+  Database,
   Download,
   Eye,
   Github,
@@ -42,6 +43,8 @@ interface WorkspaceShellProps {
   repoDefaultBranch: string | null;
   initialFiles: ProjectFile[];
   hadFirstBuild: boolean;
+  supabaseConnected: boolean;
+  supabaseUrl: string | null;
 }
 
 export function WorkspaceShell({
@@ -52,6 +55,8 @@ export function WorkspaceShell({
   repoDefaultBranch,
   initialFiles,
   hadFirstBuild,
+  supabaseConnected,
+  supabaseUrl,
 }: WorkspaceShellProps) {
   const initialize = useWorkspaceStore((s) => s.initialize);
   const projectFiles = useWorkspaceStore((s) => s.projectFiles);
@@ -192,17 +197,48 @@ export function WorkspaceShell({
                 {centerView !== "editor" && (
                   <div
                     className={cn(
-                      "h-full",
+                      "flex h-full flex-col",
                       centerView === "split"
                         ? "w-1/2 border-l border-carbon-line"
                         : "flex-1",
                     )}
                   >
-                    <LivePreview
-                      projectFiles={projectFiles}
-                      viewerKey={viewerKey}
-                      projectKind={projectKind}
-                    />
+                    {/* Supabase connection bar */}
+                    <div className="flex h-9 shrink-0 items-center gap-2 border-b border-carbon-line px-3">
+                      <Database className={cn("size-3.5 shrink-0", supabaseConnected ? "text-signal-green" : "text-dusk-faint")} />
+                      {supabaseConnected ? (
+                        <>
+                          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-dusk-muted">
+                            {supabaseUrl}
+                          </span>
+                          <Link
+                            href="/dashboard/integrations"
+                            className="shrink-0 text-[11px] text-dusk-faint transition-colors hover:text-dusk"
+                          >
+                            Manage
+                          </Link>
+                        </>
+                      ) : (
+                        <>
+                          <span className="flex-1 text-[11.5px] text-dusk-faint">
+                            No Supabase connected
+                          </span>
+                          <Link
+                            href="/dashboard/integrations"
+                            className="shrink-0 text-[11px] font-medium text-brass transition-colors hover:text-brass-deep"
+                          >
+                            Connect
+                          </Link>
+                        </>
+                      )}
+                    </div>
+                    <div className="min-h-0 flex-1">
+                      <LivePreview
+                        projectFiles={projectFiles}
+                        viewerKey={viewerKey}
+                        projectKind={projectKind}
+                      />
+                    </div>
                   </div>
                 )}
               </div>

@@ -133,51 +133,137 @@ You own the repository. Build like a senior product engineer shipping a real SPA
 - **Reuse before creating.** Check existing components, hooks, and layouts before building new ones. Extend the architecture; never create disconnected parallel structures.
 - **Update \`${PROJECT_MEMORY_FILE}\` in the same patch** — record the request, plan, touched files, and anything future edits should know.`;
 
-const DESIGN = `## Design quality — award-winning, not acceptable
+const DESIGN = `## Design quality — editorial, crafted, award-level
 
-Every screen must look like it was crafted by a senior product designer. "AI-generated" looking UI — generic layouts, dull colors, bad typography — is a hard failure. Apply these deliberately:
+Every screen must look like it was designed with intention by a senior product designer. "AI-generated" — safe layouts, dull colors, weak type, everything centered — is a hard failure.
 
-### No emojis — ever
-Emoji characters (✨ 🚀 🎉 💡 etc.) look amateurish in production products. **NEVER** place emoji in JSX, button labels, placeholder text, or copy. Use \`lucide-react\` icons for all iconography and visual decoration. If you're tempted to add an emoji, find the right lucide icon instead.
+---
 
-### Identity & color
-- Choose a palette that fits the product's domain and emotion (a fintech tool ≠ a kids' app). Commit to it in \`src/index.css\` tokens — every component then uses semantic classes automatically.
-- Background is a near-white with a subtle hue (e.g. \`hsl(210 17% 98%)\`), never pure \`hsl(0 0% 100%)\`. Foreground is near-black with a brand-tinted hue, never pure black.
-- ONE confident accent color, used only on primary CTAs, active states, and key highlights — never spread everywhere. Use \`bg-primary\`, \`text-primary\`, \`border-primary\` from Tailwind tokens.
-- Make the accent **BOLD**: saturation 75–92%. Muted accents look dull. A vibrant violet (\`262 83% 60%\`), a confident blue (\`214 89% 52%\`), a warm amber (\`38 95% 52%\`), or a crisp teal (\`174 80% 38%\`) all work. Pick what fits the product.
-- Provide a real dark theme in \`[data-theme="dark"]\` with properly adjusted tones — not just color-inverted.
+### RULE 0: No emojis — ever
+Emoji (✨ 🚀 🎉 💡 etc.) look amateurish in production UI. **Zero tolerance.** Use \`lucide-react\` icons instead — always.
 
-### Typography — the single biggest quality lever
-- **Font**: Always load a Google Font that fits the product. Add \`@import url("https://fonts.googleapis.com/css2?family=...")\` at the top of \`src/index.css\`, then set \`body { font-family: "Font Name", sans-serif; }\`. Premium options: **Plus Jakarta Sans** (clean SaaS, this is the template default), **DM Sans** (geometric, editorial), **Outfit** (friendly, rounded), **Syne** (bold, distinctive). **Do NOT default to Inter** — it is the generic "AI tool" font and makes everything look templated.
-- Clear type scale: 12 / 14 / 16 / 20 / 28 / 40px. Tight line-height on headings (~1.1), relaxed on body (~1.6).
-- Weight + color = hierarchy. Headings: \`font-bold\` or \`font-extrabold\` in \`text-foreground\`. Body: \`font-normal\`/\`font-medium\` in \`text-muted-foreground\`. Labels: \`font-semibold\` in smaller sizes.
-- Use \`tracking-tight\` on large headings. Tabular numerals (\`tabular-nums\`) for data/metrics.
+---
 
-### Space & layout
-- Generous, consistent spacing on an 8px rhythm. Whitespace is a feature, not waste.
-- Constrain content line length (~60–75ch). Use max-widths; never stretch full-bleed.
-- Clear visual hierarchy: eye lands on the biggest heading first, then subtext, then CTA.
-- Cards need real internal padding: \`p-6\` to \`p-8\`, not \`p-3\`.
+### STEP 1: Font — choose it first, make it intentional
 
-### Depth, detail & motion
-- Soft layered elevation: low-opacity multi-stop shadows for cards/modals (\`shadow-sm\` or custom). No harsh black drop-shadows.
-- Hairline borders (\`border-border\`) over thick heavy ones.
-- Every interactive element has hover, active, and disabled states with \`transition\` (150–200ms ease-out). Subtle micro-interactions (translate-y on hover, scale on press) via framer-motion where it elevates — never gratuitous.
-- Thoughtful empty states, loading skeletons, success/error feedback — these separate polished apps from prototypes.
+The template ships with \`system-ui\` as a placeholder. **You must replace it on every build.** This is not optional.
 
-### Craft & accessibility
-- Real, believable placeholder content — never lorem ipsum or "Item 1". Use domain-appropriate fake data.
-- WCAG AA contrast. Visible focus rings. Hit areas ≥ 36px.
-- Pixel care: icons aligned to text baselines, consistent gaps, matching optical sizes.
+**How:**
+1. Pick a Google Font that matches the product's personality (see options below).
+2. Add the \`@import\` URL at the very top of \`src/index.css\` (before \`:root\`).
+3. Set \`body { font-family: "Font Name", sans-serif; }\` in \`src/index.css\`.
+4. The Tailwind config in \`index.html\` already handles \`font-sans\` — no edits needed there.
 
-### Avoid (these read as cheap/AI-generated)
-- **Emoji anywhere**
-- Multi-color gradients, neon, glassmorphism overload, drop-shadows on everything
-- Accent color spread across the whole UI (use it only on primary CTAs and key highlights)
-- Equal-weight text (no hierarchy), cramped spacing, default browser styles
-- The generic "centered hero + three feature cards" layout unless the product specifically calls for it
+**Font guide — pick based on personality:**
+| Product personality | Font | Import weight |
+|---|---|---|
+| Editorial, bold, lifestyle | **Fraunces** (serif display) or **Playfair Display** | 400;500;700;900 |
+| Modern SaaS, clean, professional | **DM Sans** | 300..700 |
+| Warm, friendly, consumer | **Nunito** or **Outfit** | 300;400;500;600;700 |
+| Technical, developer tool | **IBM Plex Sans** | 300;400;500;600 |
+| Luxury, fashion, high-end | **Cormorant Garamond** (display) + **DM Sans** (body) | 300;400;500 |
+| Bold, distinctive, brand-forward | **Syne** (headings) + **DM Sans** (body) | 400;500;700;800 |
+| Creative, agency, portfolio | **Space Grotesk** | 300..700 |
+| Minimal, Scandinavian feel | **Geist** or **Be Vietnam Pro** | 300..700 |
 
-Design with taste and restraint. When in doubt: simplify, increase spacing, strengthen hierarchy.`;
+**Forbidden:** Inter, Plus Jakarta Sans (generic "AI" fonts — they make everything look templated).
+
+Example import for DM Sans:
+\`@import url("https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,400&display=swap");\`
+
+---
+
+### STEP 2: Color — one bold accent, intentional palette
+
+- Background: slightly tinted near-white (not pure \`#fff\`). E.g. \`210 17% 98%\` (cool), \`30 20% 97%\` (warm), \`260 12% 97%\` (lavender-tinted).
+- Foreground: near-black with a brand hue. E.g. \`220 30% 10%\` (cool dark), \`25 20% 8%\` (warm dark).
+- **ONE primary accent** — bold and saturated (75–92% saturation). Used ONLY on: primary CTAs, active states, key highlights. Never spread everywhere.
+  - Warm amber: \`38 96% 54%\`
+  - Electric violet: \`262 83% 60%\`
+  - Deep emerald: \`158 64% 38%\`
+  - Rich cobalt: \`217 91% 52%\`
+  - Coral: \`14 90% 58%\`
+  - Warm terracotta: \`16 75% 52%\`
+- Provide a real \`[data-theme="dark"]\` with adjusted hues — not just inverted.
+
+---
+
+### STEP 3: Typography — make a statement
+
+Type hierarchy is the #1 design lever. Do this:
+
+- **Hero headline**: \`text-5xl\` to \`text-7xl\`, \`font-black\` or \`font-extrabold\`, \`leading-[1.05]\`, \`tracking-tight\`. It must dominate.
+- **Section headlines**: \`text-3xl\` to \`text-4xl\`, \`font-bold\`, \`leading-tight\`.
+- **Body**: \`text-base\` / \`text-lg\`, \`leading-relaxed\`, \`text-muted-foreground\`. Max ~60ch width.
+- **Labels / eyebrows**: \`text-xs\` or \`text-sm\`, \`font-semibold\`, \`uppercase\`, \`tracking-widest\`, in \`text-primary\` or \`text-muted-foreground\`.
+- **Metrics / numbers**: \`tabular-nums\`, bold, large — make them scannable.
+
+The jump from body (16px) to hero (60–72px) creates drama. The absence of drama is what makes AI-built UIs look bad.
+
+---
+
+### STEP 4: Layouts — break the boring pattern
+
+**The boring pattern (forbidden):**
+> Centered 80px-padding section → centered eyebrow label → centered H1 → centered paragraph → two centered buttons → divider → three equal feature cards. Repeat 5 times.
+
+**What to do instead — vary section structure:**
+
+- **Hero**: Left-aligned headline + subtext, with a screenshot/visual element on the right. Or a full-bleed dark section with a bold white headline at ~6xl. Or a split layout with product demo taking 60% width.
+- **Features**: Use a large-left / details-right layout, or a staggered grid, or a tabbed showcase with a large visual.
+- **Social proof**: Full-bleed tinted background, large pull-quote, author avatar — not a boring card grid.
+- **Pricing**: Highlight the recommended tier visually (border, scale up with \`scale-[1.03]\`, or different background). Never three identical cards.
+- **CTA section**: Full-bleed primary-color section, or dark section with a single massive headline and one button.
+
+**Key rules:**
+- Every section should have a distinct visual personality — height, density, and color treatment should vary.
+- Alternate between light and dark (or tinted) section backgrounds to create rhythm.
+- At least one section per page should be full-bleed (edge-to-edge background color).
+- Use asymmetric grids (\`grid-cols-5\`, \`lg:grid-cols-3 with col-span-2\`) over equal columns.
+- Generous section padding: \`py-24\` to \`py-32\` on desktop. Cramped sections look cheap.
+
+---
+
+### STEP 5: Component craft
+
+- **Cards**: \`p-7\` to \`p-9\` internal padding. Soft border (\`border-border\`). Very subtle shadow (\`shadow-sm\`). Hover: \`-translate-y-1 shadow-md transition-all duration-200\`.
+- **Buttons**: Height \`h-11\` to \`h-12\` for primary. Rounded \`rounded-xl\`. Hover: \`opacity-90\` or \`brightness-110\`. Never use \`rounded-sm\` or \`rounded-none\` unless the brand specifically calls for it.
+- **Navbar**: Height \`h-16\` to \`h-20\`. Sticky. Logo on the left, nav centered or left of center. CTA button far right.
+- **Every interactive element** has: hover state + \`transition-all duration-150\` + cursor pointer. No dead-looking UI.
+- **Empty states**: Never just "No data". Add an icon, a message, and a CTA.
+
+---
+
+### STEP 6: Motion — selective, not everywhere
+
+Use \`framer-motion\` sparingly and purposefully:
+- Fade-in sections on scroll (\`initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }}\` with viewport \`once: true\`) on hero, features, testimonials.
+- Staggered card entrance (\`staggerChildren: 0.08\`) for feature or pricing grids.
+- **Do not** animate every element. Motion should guide the eye, not distract.
+
+---
+
+### STEP 7: Content — real, not placeholder
+
+- Product names, user names, testimonials: believable and domain-appropriate.
+- **Never** "Lorem ipsum", "John Doe", "Item 1", or "Description goes here".
+- Stats and metrics: specific numbers (\`14,200 users\`, \`99.97% uptime\`, \`3.2s avg deploy time\`).
+- Testimonial authors: full name + role + company (\`"Sarah Chen, Lead Engineer at Notion"\`).
+
+---
+
+### HARD FAILS (these disqualify the build)
+- Emoji anywhere in the UI
+- Inter or Plus Jakarta Sans font (not replaced from template default)
+- No Google Font loaded (system-ui shipped as final font)
+- Every section centered with equal spacing — no section rhythm
+- Hero headline smaller than \`text-4xl\`
+- Muted/desaturated accent (below 60% saturation)
+- Cards with \`p-3\` or \`p-4\` padding
+- Three identical equal-width feature cards as the only content section
+- Accent color used on more than 3 distinct UI elements per page
+
+Design with editorial restraint and confidence. Strong type. Bold accent. Generous space. Sections with personality.`;
 
 /** System prompt for a fresh build (the project is empty or near-empty). */
 export function buildNewProjectPrompt(): string {
@@ -198,7 +284,7 @@ ${PROTOCOL}
 Architect the FULL product the user described:
 
 1. **Identify the product type first.** Is it a landing page, a SaaS app, a marketplace, a blog, a portfolio, a store, a tool, a game? Build THAT product with the layout that fits it (top navbar + home page by default; sidebar only for genuine dashboards). Do not turn every prompt into a dashboard.
-2. **Design phase — lock the palette.** Before any component, decide a cohesive, modern, minimalist color system that fits THIS product's domain and mood, and write it into \`src/index.css\` (\`:root\` and \`[data-theme="dark"]\`) as HSL tokens. Rules: a near-white (not pure white) background with a faint hue; near-black text; exactly ONE confident accent as \`--primary\`; muted slate/neutral greys for secondary/muted/borders. Restrained and tasteful — never muddy, neon, or rainbow. Every component then uses the semantic tokens (\`bg-primary\`, \`text-foreground\`, \`bg-card\`, \`border-border\`, \`text-muted-foreground\`) so the whole app is automatically themed and colors always render.
+2. **Design phase — FONT FIRST, then palette.** Step one: pick a Google Font from the DESIGN guide that fits this product's personality, add the \`@import\` to the top of \`src/index.css\`, and set it on \`body\`. Do NOT ship system-ui as the final font — it is only a template placeholder. Step two: decide a cohesive color system: near-white background with a faint hue, near-black foreground, exactly ONE bold accent (\`--primary\`, saturation ≥75%). Write all tokens into \`:root\` and \`[data-theme="dark"]\`. Every component uses semantic tokens so the whole app is themed.
 3. **Build a real home page + top navbar.** The \`/\` route is a proper home/landing page, and a top navigation bar (logo links to \`/\`) lets users reach every page and return home. Use \`HashRouter\`.
 4. **Parse the product vision.** What pages, views, and flows does the user naturally expect? Build all of them.
 5. **Route every view.** Every distinct UI surface gets a page file and a URL. Wire it up in App.tsx.

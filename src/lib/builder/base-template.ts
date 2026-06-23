@@ -58,7 +58,7 @@ const INDEX_HTML = `<!doctype html>
               ring: "hsl(var(--ring) / <alpha-value>)",
             },
             borderRadius: { lg: "var(--radius)", md: "calc(var(--radius) - 2px)", sm: "calc(var(--radius) - 4px)" },
-            fontFamily: { sans: ["Plus Jakarta Sans", "system-ui", "sans-serif"] },
+            fontFamily: { sans: ["var(--font-sans,system-ui)", "sans-serif"] },
           },
         },
       };
@@ -81,12 +81,13 @@ createRoot(document.getElementById("root")!).render(
   </React.StrictMode>
 );`;
 
-const INDEX_CSS = `@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap");
+const INDEX_CSS = `/* ── FONT: The build agent MUST replace this with a Google Font import ──────
+   e.g. @import url("https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,400&display=swap");
+   Never ship with the system-ui fallback — always set a real Google Font.      */
 
-/* Default design system — warm off-white background, near-black text, one
-   confident violet accent. The build agent re-themes these tokens during its
-   design phase. Components use semantic classes (bg-primary, text-foreground,
-   bg-card, border-border) — never hardcoded colors. */
+/* Design tokens — the build agent sets ALL values during its design phase.
+   Components use semantic classes (bg-primary, text-foreground, bg-card,
+   border-border) — never hardcoded colors. */
 :root {
   --background: 210 17% 98%;
   --foreground: 220 30% 10%;
@@ -136,7 +137,7 @@ const INDEX_CSS = `@import url("https://fonts.googleapis.com/css2?family=Plus+Ja
 html, body { width: 100%; height: 100%; }
 #root { width: 100%; height: 100%; display: flex; flex-direction: column; }
 body {
-  font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: system-ui, -apple-system, sans-serif;
   background: hsl(var(--background));
   color: hsl(var(--foreground));
   -webkit-font-smoothing: antialiased;
