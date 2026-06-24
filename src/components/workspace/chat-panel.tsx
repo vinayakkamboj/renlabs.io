@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   ArrowUp,
   FileCode2,
+  Gauge,
   ImagePlus,
   Layers,
   Loader2,
@@ -264,7 +265,38 @@ function Message({ message }: { message: BuildMessage }) {
             </ul>
           </div>
         )}
+        {message.usage && message.usage.outputTokens > 0 && (
+          <UsageLine usage={message.usage} />
+        )}
       </div>
+    </div>
+  );
+}
+
+/** Per-turn token/credit cost shown subtly under an assistant reply. */
+function UsageLine({
+  usage,
+}: {
+  usage: NonNullable<BuildMessage["usage"]>;
+}) {
+  const total = usage.inputTokens + usage.outputTokens;
+  const fmt = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
+  return (
+    <div className="mt-2 flex items-center gap-2 font-mono text-[10.5px] text-dusk-faint">
+      <Gauge className="size-3 text-dusk-faint" />
+      <span title={`${usage.inputTokens.toLocaleString()} in · ${usage.outputTokens.toLocaleString()} out`}>
+        {fmt(total)} tokens
+      </span>
+      <span className="text-dusk-faint/60">·</span>
+      <span>
+        {fmt(usage.inputTokens)} in / {fmt(usage.outputTokens)} out
+      </span>
+      {usage.creditsDeducted ? (
+        <>
+          <span className="text-dusk-faint/60">·</span>
+          <span className="text-signal-amber">−{usage.creditsDeducted} credits</span>
+        </>
+      ) : null}
     </div>
   );
 }

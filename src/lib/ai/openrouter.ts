@@ -7,6 +7,8 @@
  *   OPENROUTER_MODEL     the Astra model slug on OpenRouter
  */
 
+import { formatUsageMarker } from "./usage";
+
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 export interface ChatMsg {
@@ -63,6 +65,9 @@ export async function openRouterStream(
     body: JSON.stringify({
       model: opts.model ?? astraModelId(),
       stream: true,
+      // Ask the gateway to include a final usage chunk so we can report real
+      // token counts back to the client.
+      stream_options: { include_usage: true },
       // `temperature` is deprecated on the latest models (e.g. Claude Opus 4.8)
       // and the gateway returns a 400 if it's sent. Only include it when a
       // caller explicitly provides one.
@@ -83,6 +88,8 @@ export function sseToText(
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
   let buffer = "";
+  let inputTokens = 0;
+  let outputTokens = 0;
 
   function processLine(line: string, controller: TransformStreamDefaultController<Uint8Array>) {
     const data = line.trim();
@@ -92,7 +99,13 @@ export function sseToText(
     try {
       const json = JSON.parse(payload) as {
         choices?: { delta?: { content?: string } }[];
+        usage?: { prompt_tokens?: number; completion_tokens?: number };
       };
+      // The final chunk (with include_usage) carries token counts.
+      if (json.usage) {
+        inputTokens = json.usage.prompt_tokens ?? inputTokens;
+        outputTokens = json.usage.completion_tokens ?? outputTokens;
+      }
       const delta = json.choices?.[0]?.delta?.content;
       if (delta) controller.enqueue(encoder.encode(delta));
     } catch {
@@ -113,6 +126,9 @@ export function sseToText(
           processLine(buffer, controller);
           buffer = "";
         }
+        controller.enqueue(
+          encoder.encode(formatUsageMarker({ inputTokens, outputTokens })),
+        );
       },
     }),
   );

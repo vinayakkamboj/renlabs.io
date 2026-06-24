@@ -28,6 +28,8 @@ import { EditorPanel } from "@/components/workspace/editor-panel";
 import { LivePreview } from "@/components/workspace/preview";
 import { InviteModal } from "@/components/workspace/invite-modal";
 import { GitHubPushModal } from "@/components/workspace/github-push-modal";
+import { CreditsBadge } from "@/components/workspace/credits-badge";
+import { ProfileMenu } from "@/components/workspace/profile-menu";
 import { useWorkspaceStore, loadPersisted } from "@/lib/builder/store";
 import { downloadProjectZip } from "@/lib/builder/download";
 import type { ProjectFile, BuildMessage } from "@/lib/builder/types";
@@ -114,6 +116,8 @@ export function WorkspaceShell({
               {repoFullName}
             </span>
           )}
+          {/* Available credits + last-turn token usage */}
+          <CreditsBadge />
         </div>
 
         {/* Center: view toggle */}
@@ -166,6 +170,10 @@ export function WorkspaceShell({
               setPushOpen(true);
             }}
           />
+          {/* Circular profile / account menu */}
+          <div className="ml-1 pl-1">
+            <ProfileMenu />
+          </div>
         </div>
       </header>
 

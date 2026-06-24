@@ -9,6 +9,7 @@
  */
 
 import type { ChatMsg } from "./openrouter";
+import { formatUsageMarker } from "./usage";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 
@@ -96,6 +97,9 @@ export function anthropicSseToText(
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
   let buffer = "";
+  // Captured from the SSE so we can append a usage marker when the stream ends.
+  let inputTokens = 0;
+  let outputTokens = 0;
 
   function processLine(line: string, controller: TransformStreamDefaultController<Uint8Array>) {
     const data = line.trim();
@@ -105,8 +109,19 @@ export function anthropicSseToText(
     try {
       const json = JSON.parse(payload) as {
         type?: string;
+        message?: { usage?: { input_tokens?: number; output_tokens?: number } };
+        usage?: { output_tokens?: number };
         delta?: { type?: string; text?: string };
       };
+      // message_start carries input_tokens; message_delta carries the running
+      // output_tokens total.
+      if (json.type === "message_start" && json.message?.usage) {
+        inputTokens = json.message.usage.input_tokens ?? inputTokens;
+        outputTokens = json.message.usage.output_tokens ?? outputTokens;
+      }
+      if (json.type === "message_delta" && json.usage?.output_tokens != null) {
+        outputTokens = json.usage.output_tokens;
+      }
       if (
         json.type === "content_block_delta" &&
         json.delta?.type === "text_delta" &&
@@ -133,6 +148,9 @@ export function anthropicSseToText(
           processLine(buffer, controller);
           buffer = "";
         }
+        controller.enqueue(
+          encoder.encode(formatUsageMarker({ inputTokens, outputTokens })),
+        );
       },
     }),
   );

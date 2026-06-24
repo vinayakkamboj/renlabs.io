@@ -76,6 +76,11 @@ export async function POST(req: NextRequest) {
   const tier = resolveModelTier(body.modelTier);
   const projectId = body.projectId ?? "unknown";
 
+  // Credit figures surfaced to the client via response headers (known before we
+  // start streaming). The cost is fixed per tier; the balance is post-deduction.
+  let creditsDeducted = CREDITS_PER_BUILD[tier.id as ModelTierId];
+  let creditsBalance: number | null = null;
+
   // ── 2. Credit gate ────────────────────────────────────────────────────────
   // Authenticate the request server-side. Never trust client-reported user id.
   if (isSupabaseConfigured()) {
@@ -112,6 +117,10 @@ export async function POST(req: NextRequest) {
       return Response.json({ error: "credit_check_failed" }, { status: 500 });
     }
     // deduct.skipped === true means the credits table doesn't exist yet (dev).
+    if (!("skipped" in deduct)) {
+      creditsBalance = deduct.balance;
+      creditsDeducted = deduct.deducted;
+    }
   }
 
   // ── 3. Build the prompt and context pack ──────────────────────────────────
@@ -169,11 +178,15 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  return new Response(result.stream, {
-    headers: {
-      "Content-Type": "text/plain; charset=utf-8",
-      "Cache-Control": "no-store",
-      "x-ren-tier": tier.id,
-    },
-  });
+  const headers: Record<string, string> = {
+    "Content-Type": "text/plain; charset=utf-8",
+    "Cache-Control": "no-store",
+    "x-ren-tier": tier.id,
+    "x-ren-credits-deducted": String(creditsDeducted),
+  };
+  if (creditsBalance !== null) {
+    headers["x-ren-credits-balance"] = String(creditsBalance);
+  }
+
+  return new Response(result.stream, { headers });
 }

@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { KeyRound, ShieldCheck, Smartphone } from "lucide-react";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 
-type LoginStep = "method" | "otp-sent" | "mfa";
+type LoginStep = "method" | "otp-sent" | "mfa" | "mfa-enroll";
 
 /**
  * Dedicated, branded sign-in for the Ren Labs admin. Email-only by design:
@@ -26,6 +26,8 @@ export function AdminLogin() {
   const [mfaCode, setMfaCode] = useState("");
   const [mfaFactorId, setMfaFactorId] = useState<string | null>(null);
   const [mfaChallengeId, setMfaChallengeId] = useState<string | null>(null);
+  const [enrollQr, setEnrollQr] = useState<string | null>(null);
+  const [enrollSecret, setEnrollSecret] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Email code is the primary, recommended method; password is the fallback.
@@ -34,18 +36,23 @@ export function AdminLogin() {
   const inputClass =
     "h-11 w-full rounded-xl border border-carbon-line bg-carbon px-4 text-[14px] text-dusk outline-none transition-colors placeholder:text-dusk-faint focus:border-carbon-line-strong";
 
-  /** After a successful primary auth, check if MFA is required. */
+  /**
+   * After a successful primary auth, enforce 2FA:
+   *  - If a verified TOTP factor exists and we need aal2 → challenge it.
+   *  - If no verified factor exists → force enrollment now (2FA is mandatory).
+   */
   async function handlePostAuth() {
     const supabase = createClient();
     const { data: aalData } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+
+    // Step up to aal2 when a verified factor exists.
     if (
       aalData &&
       aalData.nextLevel === "aal2" &&
       aalData.nextLevel !== aalData.currentLevel
     ) {
-      // MFA is enrolled and required — find the TOTP factor
       const { data: factors } = await supabase.auth.mfa.listFactors();
-      const totp = factors?.totp?.[0] ?? null;
+      const totp = factors?.totp?.find((f) => f.status === "verified") ?? factors?.totp?.[0] ?? null;
       if (totp) {
         const { data: challenge, error: challengeErr } = await supabase.auth.mfa.challenge({
           factorId: totp.id,
@@ -62,7 +69,67 @@ export function AdminLogin() {
         return;
       }
     }
+
+    // No verified factor — 2FA is mandatory for admin, so enroll one now.
+    const { data: factors } = await supabase.auth.mfa.listFactors();
+    const hasVerified = (factors?.totp ?? []).some((f) => f.status === "verified");
+    if (!hasVerified) {
+      await beginEnroll();
+      return;
+    }
+
     router.refresh();
+  }
+
+  /** Start TOTP enrollment: clean up stale factors, get a QR + secret to show. */
+  async function beginEnroll() {
+    const supabase = createClient();
+    // Remove any half-finished (unverified) factors so enroll doesn't collide.
+    const { data: existing } = await supabase.auth.mfa.listFactors();
+    for (const f of existing?.all ?? []) {
+      if (f.status === "unverified") {
+        await supabase.auth.mfa.unenroll({ factorId: f.id });
+      }
+    }
+    const { data, error: enrollErr } = await supabase.auth.mfa.enroll({
+      factorType: "totp",
+    });
+    if (enrollErr || !data) {
+      setError(enrollErr?.message ?? "Could not start 2FA setup.");
+      setPending(false);
+      return;
+    }
+    setMfaFactorId(data.id);
+    setEnrollQr(data.totp.qr_code);
+    setEnrollSecret(data.totp.secret);
+    setMfaCode("");
+    setStep("mfa-enroll");
+    setPending(false);
+  }
+
+  /** Verify the first TOTP code to complete enrollment, then sign in at aal2. */
+  async function verifyEnroll(e: React.FormEvent) {
+    e.preventDefault();
+    if (pending || !mfaFactorId || mfaCode.length !== 6) return;
+    setPending(true);
+    setError(null);
+    try {
+      const supabase = createClient();
+      const { data: challenge, error: challengeErr } = await supabase.auth.mfa.challenge({
+        factorId: mfaFactorId,
+      });
+      if (challengeErr || !challenge) throw challengeErr ?? new Error("Challenge failed.");
+      const { error: verifyErr } = await supabase.auth.mfa.verify({
+        factorId: mfaFactorId,
+        challengeId: challenge.id,
+        code: mfaCode,
+      });
+      if (verifyErr) throw verifyErr;
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Invalid code. Try again.");
+      setPending(false);
+    }
   }
 
   async function emailSignIn(e: React.FormEvent) {
@@ -162,6 +229,65 @@ export function AdminLogin() {
         <p className="mt-8 max-w-sm rounded-xl border border-carbon-line bg-carbon-raised p-5 text-center text-[13px] text-dusk-muted">
           Auth isn&apos;t configured on this deployment.
         </p>
+      </div>
+    );
+  }
+
+  // ── MFA enrollment step (first login — 2FA is mandatory) ────────────────
+  if (step === "mfa-enroll") {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-carbon px-6 text-dusk">
+        <div className="flex items-center gap-2.5">
+          <ShieldCheck className="size-6 text-brass" />
+          <span className="font-serif text-[1.4rem] font-medium tracking-tight">Set up 2FA</span>
+        </div>
+        <p className="mt-3 max-w-[42ch] text-center text-[13.5px] text-dusk-muted">
+          Admin access requires two-factor authentication. Scan this QR code with
+          an authenticator app (Google Authenticator, 1Password, Authy), then enter
+          the 6-digit code to finish.
+        </p>
+        <form onSubmit={verifyEnroll} className="mt-7 w-full max-w-sm space-y-4">
+          {enrollQr && (
+            <div className="flex justify-center">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={enrollQr}
+                alt="2FA QR code"
+                className="size-44 rounded-xl border border-carbon-line bg-white p-2"
+              />
+            </div>
+          )}
+          {enrollSecret && (
+            <div className="rounded-xl border border-carbon-line bg-carbon-raised px-4 py-3">
+              <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-dusk-faint">
+                Or enter this key manually
+              </p>
+              <p className="mt-1 break-all font-mono text-[12px] text-dusk">{enrollSecret}</p>
+            </div>
+          )}
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            maxLength={6}
+            required
+            autoFocus
+            placeholder="000000"
+            value={mfaCode}
+            onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            className={inputClass + " text-center tracking-[0.4em] text-lg"}
+          />
+          {error && (
+            <p className="rounded-xl bg-signal-red/10 px-4 py-2.5 text-[13px] text-signal-red">{error}</p>
+          )}
+          <button
+            type="submit"
+            disabled={pending || mfaCode.length !== 6}
+            className="h-11 w-full rounded-xl bg-brass text-[14px] font-medium text-carbon transition-colors hover:bg-brass-deep disabled:opacity-50"
+          >
+            {pending ? "Verifying…" : "Enable 2FA & sign in"}
+          </button>
+        </form>
       </div>
     );
   }

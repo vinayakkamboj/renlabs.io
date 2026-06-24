@@ -20,8 +20,10 @@ import {
   anthropicStream,
   anthropicSseToText,
 } from "./anthropic";
+import { extractUsage, type TokenUsage } from "./usage";
 
 export type { ChatMsg };
+export type { TokenUsage };
 
 export type AstraProvider = "openrouter" | "anthropic";
 
@@ -118,20 +120,23 @@ export async function streamAstraText(
 export async function completeAstraText(
   messages: ChatMsg[],
   opts: StreamOpts = {},
-): Promise<{ ok: true; text: string } | { ok: false; status: number; detail: string }> {
+): Promise<
+  | { ok: true; text: string; usage: TokenUsage | null }
+  | { ok: false; status: number; detail: string }
+> {
   const result = await streamAstraText(messages, opts);
   if (!result.ok) return result;
 
   const reader = result.stream.getReader();
   const decoder = new TextDecoder();
-  let text = "";
+  let raw = "";
   try {
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
-      if (value) text += decoder.decode(value, { stream: true });
+      if (value) raw += decoder.decode(value, { stream: true });
     }
-    text += decoder.decode();
+    raw += decoder.decode();
   } catch (e) {
     return {
       ok: false,
@@ -139,5 +144,8 @@ export async function completeAstraText(
       detail: e instanceof Error ? e.message : "stream_read_failed",
     };
   }
-  return { ok: true, text };
+  // Strip the trailing usage marker so callers (e.g. the agent runner's file
+  // parser) never see it; surface the parsed usage separately.
+  const { text, usage } = extractUsage(raw);
+  return { ok: true, text, usage };
 }

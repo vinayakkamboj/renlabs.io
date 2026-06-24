@@ -43,6 +43,13 @@ export interface FilePatchPlan {
 
 export type ChatRole = "user" | "assistant";
 
+/** Token + credit cost of a single assistant turn, for the usage readout. */
+export interface TurnUsage {
+  inputTokens: number;
+  outputTokens: number;
+  creditsDeducted?: number;
+}
+
 export interface BuildMessage {
   id: string;
   role: ChatRole;
@@ -51,6 +58,8 @@ export interface BuildMessage {
   plan?: { summary: string; files: string[] } | null;
   /** Image data URLs attached to a user message, if any. */
   images?: string[];
+  /** Token/credit usage for an assistant turn, if measured. */
+  usage?: TurnUsage | null;
   createdAt: string;
 }
 

@@ -22,7 +22,8 @@ import {
 } from "./file-patches";
 import { createBaseTemplate } from "./base-template";
 import { DEFAULT_MODEL_TIER, type ModelTierId } from "./model-tiers";
-import type { ProjectFile, BuildMessage } from "./types";
+import { extractUsage } from "@/lib/ai/usage";
+import type { ProjectFile, BuildMessage, TurnUsage } from "./types";
 
 type BuildPhase = "idle" | "thinking" | "writing" | "applying" | "error";
 
@@ -40,6 +41,10 @@ interface WorkspaceState {
   isFirstBuild: boolean;
   recentlyChanged: string[];
   error: string | null;
+  /** Live credit balance reported by the last build (null until known). */
+  creditsBalance: number | null;
+  /** Usage of the most recent assistant turn, for the header readout. */
+  lastUsage: TurnUsage | null;
 
   initialize: (
     projectId: string,
@@ -165,6 +170,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   isFirstBuild: true,
   recentlyChanged: [],
   error: null,
+  creditsBalance: null,
+  lastUsage: null,
 
   initialize: (projectId, files, messages, isFirstBuild, projectKind = "new") => {
     const seeded = files.length ? files : createBaseTemplate();
@@ -232,6 +239,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       error: null,
     }));
 
+    // Usage accumulates across the initial run and any repair pass so the chat
+    // shows the true cost of producing the final result.
+    const usageAcc: TurnUsage = { inputTokens: 0, outputTokens: 0, creditsDeducted: 0 };
+
     const runBuild = async (repairIssues?: string): Promise<string> => {
       const { messages, projectFiles, modelTier, isFirstBuild, recentlyChanged, projectKind } =
         get();
@@ -274,6 +285,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         throw new Error(`upstream:${res.status}:${detail}`);
       }
 
+      // Credit figures come back as headers (known before streaming starts).
+      const balHeader = res.headers.get("x-ren-credits-balance");
+      const dedHeader = res.headers.get("x-ren-credits-deducted");
+      if (balHeader !== null) set({ creditsBalance: Number(balHeader) });
+      if (dedHeader !== null) usageAcc.creditsDeducted! += Number(dedHeader);
+
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let full = "";
@@ -282,9 +299,17 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         const { done, value } = await reader.read();
         if (done) break;
         full += decoder.decode(value, { stream: true });
-        set({ streamingText: stripFilePatchPlan(full) || "Working…" });
+        // Strip both the patch plan and the (possibly partial) usage marker from
+        // the live preview text.
+        set({ streamingText: extractUsage(stripFilePatchPlan(full)).text || "Working…" });
       }
-      return full;
+      // Pull the usage marker out before returning so the parser never sees it.
+      const { text, usage } = extractUsage(full);
+      if (usage) {
+        usageAcc.inputTokens += usage.inputTokens;
+        usageAcc.outputTokens += usage.outputTokens;
+      }
+      return text;
     };
 
     try {
@@ -312,6 +337,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       }
 
       const prose = stripFilePatchPlan(full);
+      // Only attach usage if we actually measured tokens this turn.
+      const turnUsage: TurnUsage | null = usageAcc.outputTokens > 0 ? usageAcc : null;
 
       if (!plan) {
         // No applicable patch — treat as a plain assistant reply.
@@ -319,6 +346,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           id: newId(),
           role: "assistant",
           content: prose || "I couldn't produce a valid change. Try rephrasing.",
+          usage: turnUsage,
           createdAt: new Date().toISOString(),
         };
         set((s) => ({
@@ -326,6 +354,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           isBuilding: false,
           phase: "idle",
           streamingText: "",
+          lastUsage: turnUsage,
         }));
         persist(get().projectId, get().projectFiles, get().messages);
         return;
@@ -372,6 +401,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         role: "assistant",
         content: headline + note,
         plan: { summary: plan.plan, files: changedPaths },
+        usage: turnUsage,
         createdAt: new Date().toISOString(),
       };
 
@@ -381,6 +411,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         isBuilding: false,
         phase: "idle",
         streamingText: "",
+        lastUsage: turnUsage,
         isFirstBuild: false,
         recentlyChanged: changedPaths,
         viewerKey: s.viewerKey + 1,
