@@ -18,12 +18,7 @@ import { MarkdownContent } from "@/components/ui/markdown";
 import { useWorkspaceStore } from "@/lib/builder/store";
 import { ASTRA_MODEL } from "@/lib/builder/model-tiers";
 import type { BuildMessage } from "@/lib/builder/types";
-
-const PHASE_LABEL: Record<string, string> = {
-  thinking: "Astra is planning",
-  writing: "Writing files",
-  applying: "Applying changes",
-};
+import { cn } from "@/lib/utils";
 
 export function ChatPanel() {
   const messages = useWorkspaceStore((s) => s.messages);
@@ -100,26 +95,7 @@ export function ChatPanel() {
         )}
 
         {isBuilding && (
-          <div className="mt-5 overflow-hidden rounded-xl border border-carbon-line bg-carbon-raised">
-            <div className="flex items-center gap-2 px-3 py-2.5 text-[12.5px] text-brass">
-              <Loader2 className="size-3.5 animate-spin" />
-              <span>{PHASE_LABEL[phase] ?? "Working"}…</span>
-              <button
-                onClick={stopBuild}
-                className="ml-auto flex items-center gap-1.5 rounded-md border border-carbon-line px-2 py-1 text-[11px] font-medium text-dusk-muted transition-colors hover:border-signal-red/40 hover:text-signal-red"
-              >
-                <Square className="size-3 fill-current" />
-                Stop
-              </button>
-            </div>
-            {streamingText && (
-              <div className="border-t border-carbon-line px-3 py-2.5">
-                <p className="line-clamp-5 whitespace-pre-wrap font-mono text-[11.5px] leading-relaxed text-dusk-faint">
-                  {streamingText}
-                </p>
-              </div>
-            )}
-          </div>
+          <BuildPipeline phase={phase} streamingText={streamingText} onStop={stopBuild} />
         )}
       </div>
 
@@ -211,6 +187,84 @@ export function ChatPanel() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The build pipeline — a live, staged view of Astra working: Plan → Write →
+ * Apply. The current stage glows; completed stages check off; the streaming
+ * output scrolls beneath. Reads cooler than a single spinner line.
+ */
+const PIPELINE_STAGES = [
+  { key: "thinking", label: "Plan", icon: Sparkles },
+  { key: "writing", label: "Write", icon: FileCode2 },
+  { key: "applying", label: "Apply", icon: Wand2 },
+] as const;
+
+function BuildPipeline({
+  phase,
+  streamingText,
+  onStop,
+}: {
+  phase: string;
+  streamingText: string;
+  onStop: () => void;
+}) {
+  const activeIndex = PIPELINE_STAGES.findIndex((s) => s.key === phase);
+  const idx = activeIndex === -1 ? 0 : activeIndex;
+
+  return (
+    <div className="mt-5 overflow-hidden rounded-xl border border-brass/25 bg-gradient-to-b from-carbon-raised to-carbon shadow-[0_0_24px_-12px] shadow-brass/30">
+      {/* Stage rail */}
+      <div className="flex items-center gap-1.5 px-3 py-2.5">
+        {PIPELINE_STAGES.map((stage, i) => {
+          const state = i < idx ? "done" : i === idx ? "active" : "todo";
+          const Icon = stage.icon;
+          return (
+            <div key={stage.key} className="flex items-center gap-1.5">
+              <div
+                className={cn(
+                  "flex items-center gap-1.5 rounded-lg border px-2 py-1 text-[11px] font-medium transition-colors",
+                  state === "active" &&
+                    "border-brass/40 bg-brass/10 text-brass",
+                  state === "done" && "border-carbon-line text-signal-green",
+                  state === "todo" && "border-carbon-line text-dusk-faint/60",
+                )}
+              >
+                {state === "active" ? (
+                  <Loader2 className="size-3 animate-spin" />
+                ) : (
+                  <Icon className="size-3" />
+                )}
+                {stage.label}
+              </div>
+              {i < PIPELINE_STAGES.length - 1 && (
+                <span
+                  className={cn(
+                    "h-px w-3 transition-colors",
+                    i < idx ? "bg-signal-green/50" : "bg-carbon-line",
+                  )}
+                />
+              )}
+            </div>
+          );
+        })}
+        <button
+          onClick={onStop}
+          className="ml-auto flex items-center gap-1.5 rounded-md border border-carbon-line px-2 py-1 text-[11px] font-medium text-dusk-muted transition-colors hover:border-signal-red/40 hover:text-signal-red"
+        >
+          <Square className="size-3 fill-current" />
+          Stop
+        </button>
+      </div>
+      {streamingText && (
+        <div className="border-t border-carbon-line/70 px-3 py-2.5">
+          <p className="line-clamp-5 whitespace-pre-wrap font-mono text-[11.5px] leading-relaxed text-dusk-faint">
+            {streamingText}
+          </p>
+        </div>
+      )}
     </div>
   );
 }

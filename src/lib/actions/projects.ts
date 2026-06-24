@@ -197,6 +197,32 @@ export async function updateProjectGoals(
 }
 
 /**
+ * Save a project's business brief — the shared context every agent in the
+ * workspace reads so each one understands the business it's building for.
+ */
+export async function updateProjectBrief(
+  projectId: string,
+  brief: string,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!isSupabaseConfigured()) return { ok: false };
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false };
+
+  const { error } = await supabase
+    .from("projects")
+    .update({ brief: brief.trim() || null, updated_at: new Date().toISOString() })
+    .eq("id", projectId)
+    .eq("user_id", user.id);
+
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/dashboard/projects/${projectId}`);
+  return { ok: true };
+}
+
+/**
  * Delete a project row and redirect back to the projects list.
  */
 export async function deleteProject(id: string): Promise<void> {

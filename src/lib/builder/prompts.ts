@@ -280,6 +280,20 @@ Use \`framer-motion\` sparingly and purposefully:
 
 Design with editorial restraint and confidence. Strong type. Bold accent. Generous space. Sections with personality.`;
 
+const SIGNATURE = `## Signature polish — the details that make it look "cool", not just clean
+
+Clean is the floor. These are the touches that make a build feel modern and premium — add at least 3–4 across the app, used with restraint:
+
+- **Depth & light.** A soft radial/gradient glow behind the hero (a large blurred \`bg-primary/20\` blob via an absolutely-positioned \`div\` with \`blur-3xl\`). Subtle layered shadows on raised surfaces. One faint noise/grain overlay on a dark section reads as expensive.
+- **Gradient as accent, not decoration.** A single tasteful gradient on the hero headline (\`bg-gradient-to-br from-foreground to-foreground/60 bg-clip-text text-transparent\`) or one CTA. Never rainbow gradients everywhere.
+- **Glass & frosted surfaces.** Sticky navbar with \`backdrop-blur-xl bg-background/70 border-b border-border/60\`. Use frosted cards over a colored/gradient backdrop for one standout section.
+- **Bento grids.** For features or "how it works", use an asymmetric bento layout (tiles of different sizes in a \`grid-cols-3\` / \`auto-rows\` arrangement) rather than three equal cards. One large hero tile + smaller supporting tiles.
+- **Micro-interactions.** Buttons: \`active:scale-[0.98]\`, a subtle sheen or arrow that slides on hover. Cards: lift + border-color shift on hover. Animated number counters for key stats. A tasteful gradient ring or glow on the primary CTA.
+- **Detail layer.** Rounded-2xl on big surfaces. Hairline \`border-border/60\` dividers. \`ring-1 ring-inset ring-white/5\` on dark cards for an edge-lit feel. Consistent \`gap\`/\`space-y\` rhythm. Tabular-nums on every metric.
+- **One hero moment per app.** Each build should have a single confident focal point — an oversized gradient headline, a floating product mock with shadow + glow, a full-bleed dark hero with a spotlight. Make it memorable.
+
+Restraint still rules: pick the few moves that fit the product and execute them crisply. Busy ≠ cool.`;
+
 /** System prompt for a fresh build (the project is empty or near-empty). */
 export function buildNewProjectPrompt(): string {
   return `You are Ren Code, an autonomous front-end engineer and product architect. You build complete, production-grade React SPAs from a plain-English description — not prototypes, not single-page demos.
@@ -291,6 +305,8 @@ ${ARCHITECTURE}
 ${ENGINEERING}
 
 ${DESIGN}
+
+${SIGNATURE}
 
 ${CORRECTNESS}
 
@@ -325,6 +341,8 @@ ${ARCHITECTURE}
 ${ENGINEERING}
 
 ${DESIGN}
+
+${SIGNATURE}
 
 ${CORRECTNESS}
 

@@ -26,7 +26,7 @@ export interface RunAgentTaskResult {
 interface AgentContext {
   userId: string;
   agent: Agent;
-  project: { id: string; name: string };
+  project: { id: string; name: string; brief: string | null; goals: string[] };
   task: AgentTask | null;
   files: ProjectFile[];
   /** A short description of the project's connected Supabase schema, if any. */
@@ -99,7 +99,7 @@ async function loadContext(agentId: string, taskId?: string): Promise<AgentConte
 
   const { data: project, error: projectError } = await supabase
     .from("projects")
-    .select("id, name")
+    .select("id, name, brief, goals")
     .eq("id", agentRow.project_id)
     .single();
 
@@ -170,7 +170,12 @@ async function loadContext(agentId: string, taskId?: string): Promise<AgentConte
       createdAt: agentRow.created_at,
       updatedAt: agentRow.updated_at,
     },
-    project: { id: project.id, name: project.name },
+    project: {
+      id: project.id,
+      name: project.name,
+      brief: (project.brief as string) ?? null,
+      goals: (project.goals as string[]) ?? [],
+    },
     task,
     files: files || [],
     userId,
@@ -218,6 +223,31 @@ function detectLanguage(path: string): string | null {
   return langMap[ext || ""] || null;
 }
 
+/**
+ * The shared "business context" every agent in a workspace reads, so an engineer,
+ * QA, designer, or ops agent all operate from the same understanding of what the
+ * business is, who it serves, and what it's trying to achieve.
+ */
+function buildBusinessContext(ctx: AgentContext): string {
+  const parts: string[] = [];
+  if (ctx.project.brief?.trim()) {
+    parts.push(ctx.project.brief.trim());
+  }
+  if (ctx.project.goals?.length) {
+    parts.push(
+      `Current goals:\n${ctx.project.goals.map((g) => `- ${g}`).join("\n")}`,
+    );
+  }
+  if (!parts.length) return "";
+  return (
+    `\n\n## Business context — "${ctx.project.name}"\n` +
+    parts.join("\n\n") +
+    `\nYou are part of an autonomous team building this product. Make decisions ` +
+    `that serve the business above, coordinate implicitly with the other roles, ` +
+    `and keep everything consistent with these goals.`
+  );
+}
+
 async function buildPrompt(ctx: AgentContext): Promise<ChatMsg[]> {
   const preset = ROLE_PRESETS[ctx.agent.role];
 
@@ -234,6 +264,9 @@ async function buildPrompt(ctx: AgentContext): Promise<ChatMsg[]> {
     ? `\n\n## Connected backend\n${ctx.schemaSummary}\nWrite queries and types that match this schema exactly.`
     : "";
 
+  // The business brief + goals — what makes each agent understand the business.
+  const businessContext = buildBusinessContext(ctx);
+
   const userMessage =
     ctx.task?.detail ||
     ctx.task?.title ||
@@ -244,7 +277,7 @@ async function buildPrompt(ctx: AgentContext): Promise<ChatMsg[]> {
   return [
     {
       role: "user",
-      content: userMessage + schemaContext + fileContext + taskContext,
+      content: userMessage + businessContext + schemaContext + fileContext + taskContext,
     },
   ];
 }

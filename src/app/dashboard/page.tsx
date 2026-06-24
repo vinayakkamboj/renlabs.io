@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Coins, FolderGit2, Github, Sparkles, Users } from "lucide-react";
+import { ArrowRight, Coins, FolderGit2, Github, Sparkles, Users } from "lucide-react";
 import { StatusBadge, Panel } from "@/components/platform/widgets";
 import { ProjectCardActions } from "@/components/platform/project-card-actions";
 import { GitHubImportButton } from "@/components/platform/github-import-button";
@@ -172,44 +172,27 @@ export default async function DashboardPage() {
 
       <CollaborationRequests invitations={incomingInvitations} />
 
-      {/* Projects grid */}
+      {/* Projects grid — the create tile is always the first card so the
+          primary action is one click away whether or not you have projects. */}
       <section>
         <div className="mb-4 flex items-center gap-2">
           <FolderGit2 className="size-4 text-dusk-faint" />
           <h2 className="font-serif text-[1.2rem] text-dusk">Projects</h2>
-        </div>
-        {projects.length === 0 ? (
-          <EmptyProjects />
-        ) : (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {projects.map((p) => (
-              <ProjectCard key={p.id} project={p} />
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* Activity — agents are managed inside each project, not here */}
-      <section>
-        <div className="mb-4 flex items-center justify-between gap-2">
-          <h2 className="font-serif text-[1.2rem] text-dusk">Activity</h2>
-          {recentActivity.length > 0 && (
-            <Link
-              href="/dashboard/activity"
-              className="text-[12.5px] text-dusk-muted transition-colors hover:text-dusk"
-            >
-              View all
-            </Link>
+          {projectCount > 0 && (
+            <span className="text-[12px] text-dusk-faint">· {projectCount}</span>
           )}
         </div>
-        <Panel padded>
-          <ActivityFeed events={recentActivity} />
-        </Panel>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <NewProjectTile />
+          {projects.map((p) => (
+            <ProjectCard key={p.id} project={p} />
+          ))}
+        </div>
       </section>
 
       {sharedProjects.length > 0 && (
         <section>
-          <div className="mb-5 flex items-center gap-2">
+          <div className="mb-4 flex items-center gap-2">
             <Users className="size-4 text-dusk-faint" />
             <h2 className="font-serif text-[1.2rem] text-dusk">Shared with you</h2>
           </div>
@@ -220,13 +203,46 @@ export default async function DashboardPage() {
           </div>
         </section>
       )}
+
+      {/* Activity is secondary — a compact panel at the bottom. */}
+      {recentActivity.length > 0 && (
+        <section>
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <h2 className="font-serif text-[1.2rem] text-dusk">Recent activity</h2>
+            <Link
+              href="/dashboard/activity"
+              className="text-[12.5px] text-dusk-muted transition-colors hover:text-dusk"
+            >
+              View all
+            </Link>
+          </div>
+          <Panel padded>
+            <ActivityFeed events={recentActivity} />
+          </Panel>
+        </section>
+      )}
     </div>
+  );
+}
+
+function NewProjectTile() {
+  return (
+    <Link
+      href="/dashboard/projects/new"
+      className="group flex min-h-[124px] flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-carbon-line bg-carbon-raised/40 p-4 text-center transition-all duration-150 hover:border-brass/40 hover:bg-carbon-raised"
+    >
+      <div className="flex size-9 items-center justify-center rounded-xl border border-carbon-line bg-carbon text-brass transition-colors group-hover:border-brass/40">
+        <Sparkles className="size-4" />
+      </div>
+      <span className="text-[13px] font-medium text-dusk">New project</span>
+      <span className="text-[11.5px] text-dusk-faint">Start from a prompt or repo</span>
+    </Link>
   );
 }
 
 function ProjectCard({ project }: { project: Project }) {
   return (
-    <div className="group relative flex flex-col rounded-xl border border-carbon-line bg-carbon-raised transition-all duration-150 hover:border-carbon-line-strong hover:bg-carbon-high/50">
+    <div className="group relative flex flex-col rounded-xl border border-carbon-line bg-carbon-raised transition-all duration-150 hover:-translate-y-0.5 hover:border-carbon-line-strong hover:bg-carbon-high/50 hover:shadow-lg hover:shadow-carbon/40">
       <Link href={`/workspace/${project.id}`} className="flex flex-1 flex-col rounded-xl p-4">
         <div className="flex items-start justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
@@ -244,9 +260,12 @@ function ProjectCard({ project }: { project: Project }) {
         <p className="mt-3 text-[12px] text-dusk-faint">
           {project.kind === "new" ? "New build" : "Repository"}
         </p>
-        <p className="mt-0.5 text-[11.5px] text-dusk-faint/60">
-          Updated {relativeTime(project.updated_at)}
-        </p>
+        <div className="mt-0.5 flex items-center justify-between">
+          <p className="text-[11.5px] text-dusk-faint/60">
+            Updated {relativeTime(project.updated_at)}
+          </p>
+          <ArrowRight className="size-3.5 -translate-x-1 text-brass opacity-0 transition-all duration-150 group-hover:translate-x-0 group-hover:opacity-100" />
+        </div>
         {project.shared && (
           <span className="mt-3 inline-flex w-fit items-center gap-1 rounded-full bg-carbon-high px-2 py-0.5 text-[11px] text-dusk-muted">
             <Users className="size-3" /> Shared
@@ -257,28 +276,6 @@ function ProjectCard({ project }: { project: Project }) {
       {/* Actions menu */}
       <div className="absolute right-3 top-3">
         <ProjectCardActions projectId={project.id} projectName={project.name} />
-      </div>
-    </div>
-  );
-}
-
-function EmptyProjects() {
-  return (
-    <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-carbon-line bg-carbon-raised py-16 text-center">
-      <FolderGit2 className="size-8 text-dusk-faint/40" />
-      <p className="mt-4 text-[14px] font-medium text-dusk">No projects yet</p>
-      <p className="mt-1.5 max-w-[36ch] text-[13px] text-dusk-muted">
-        Start from a prompt or connect an existing GitHub repository.
-      </p>
-      <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-        <Link
-          href="/dashboard/projects/new?mode=new"
-          className="flex h-9 items-center gap-2 rounded-lg bg-brass px-4 text-[13px] font-medium text-carbon transition-colors hover:bg-brass-deep"
-        >
-          <Sparkles className="size-3.5" />
-          Start a new app
-        </Link>
-        <GitHubImportButton />
       </div>
     </div>
   );

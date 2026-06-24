@@ -9,6 +9,7 @@ import { ProjectAgentList } from "@/components/platform/project-agent-list";
 import { SupabaseConnect } from "@/components/platform/supabase-connect";
 import { TaskQueue } from "@/components/platform/task-queue";
 import { GoalsEditor } from "@/components/platform/goals-editor";
+import { BriefEditor } from "@/components/platform/brief-editor";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import { deleteProject } from "@/lib/actions/projects";
 import { listAgents, listTasks, listReports } from "@/lib/actions/agents";
@@ -90,13 +91,15 @@ export default async function ProjectDetailPage({ params }: PageProps) {
     listReports({ projectId: id, limit: 5 }),
     supabase
       .from("projects")
-      .select("goals")
+      .select("goals, brief")
       .eq("id", id)
       .eq("user_id", user.id)
       .maybeSingle(),
   ]);
   const goals: string[] =
     (goalsRow.data?.goals as string[] | undefined) ?? [];
+  const brief: string | null =
+    (goalsRow.data?.brief as string | undefined) ?? null;
   const projectOption = [{ id: project.id, name: project.name }];
 
   // Per-project Supabase backend. The service-role key is never returned here —
@@ -148,6 +151,19 @@ export default async function ProjectDetailPage({ params }: PageProps) {
           </div>
         }
       />
+
+      {/* Business brief — shared context every agent reads */}
+      <Panel
+        className="mb-4"
+        title="Business context"
+        meta={
+          <span className="text-[11.5px] text-dusk-faint">
+            Every agent reads this
+          </span>
+        }
+      >
+        <BriefEditor projectId={project.id} initialBrief={brief} />
+      </Panel>
 
       {/* Current goals (editable) */}
       <Panel className="mb-4" title="Current goals">
