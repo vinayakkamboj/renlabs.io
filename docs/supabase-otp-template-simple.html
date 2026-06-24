@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #161513; margin: 0; padding: 48px 16px; }
+    .wrapper { max-width: 480px; margin: 0 auto; background: #1d1c19; border: 1px solid #2b2925; border-radius: 16px; }
+    .header { padding: 32px 40px; border-bottom: 1px solid #2b2925; display: flex; justify-content: space-between; align-items: center; }
+    .logo { color: #c9ad79; font-weight: 600; font-size: 16px; }
+    .badge { background: rgba(179,100,92,0.08); border: 1px solid rgba(179,100,92,0.25); color: #b3645c; padding: 4px 12px; border-radius: 999px; font-size: 9px; font-weight: 600; text-transform: uppercase; }
+    .body { padding: 36px 40px; }
+    .eyebrow { font-size: 10px; text-transform: uppercase; color: #6b665a; margin: 0 0 8px; letter-spacing: 0.14em; font-weight: 600; }
+    .title { font-size: 24px; color: #e9e4d8; margin: 0 0 20px; font-weight: 700; }
+    .text { color: #97917f; font-size: 14px; line-height: 1.65; margin: 0 0 28px; }
+    .text strong { color: #e9e4d8; }
+    .code-block { background: #161513; border: 1px solid #2b2925; border-radius: 12px; padding: 24px; text-align: center; margin-bottom: 28px; }
+    .code { font-family: "SF Mono", monospace; font-size: 44px; font-weight: 700; letter-spacing: 0.35em; color: #e9e4d8; }
+    .note { background: #24221e; border: 1px solid #2b2925; border-radius: 10px; padding: 16px 20px; font-size: 12.5px; color: #6b665a; line-height: 1.6; }
+    .note strong { color: #97917f; }
+    .footer { padding: 18px 40px; border-top: 1px solid #2b2925; font-size: 12px; color: #6b665a; }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="header">
+      <div class="logo">◎ Ren Labs</div>
+      <div class="badge">Internal</div>
+    </div>
+    <div class="body">
+      <p class="eyebrow">Admin sign-in</p>
+      <h1 class="title">Your sign-in code</h1>
+      <p class="text">Enter this 6-digit code on the Ren Labs admin login screen. It expires in <strong>10 minutes</strong>.</p>
+      <div class="code-block">
+        <div class="code">{{ .Token }}</div>
+      </div>
+      <div class="note">
+        <strong>Didn't request this?</strong> You can safely ignore this email — someone may have entered your address by mistake. Your account is secure.
+      </div>
+    </div>
+    <div class="footer">
+      Ren Labs &mdash; Restricted to authorised personnel only.
+    </div>
+  </div>
+</body>
+</html>

@@ -50,7 +50,8 @@ export async function POST(req: Request) {
   });
 
   if (error) {
-    console.error("[send-otp] error:", error.message);
+    console.error("[send-otp] Full error object:", JSON.stringify(error, null, 2));
+    console.error("[send-otp] Error message:", error.message);
 
     const isRateLimit =
       /after \d+ second/i.test(error.message) ||
