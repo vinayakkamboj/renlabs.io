@@ -1,9 +1,10 @@
 /**
  * POST /api/auth/verify-otp
  *
- * Verifies the 6-digit code against our admin_otps table, then returns the
- * hashed_token so the client can exchange it for a Supabase session via
- * supabase.auth.verifyOtp({ token_hash, type: "magiclink" }).
+ * Checks the 6-digit code against admin_otps, then calls generateLink fresh
+ * to get a live action_link. The client navigates to that URL, Supabase
+ * redirects back to /auth/callback with a code, and exchangeCodeForSession
+ * creates the session — no stale tokens.
  */
 
 export const runtime = "nodejs";
@@ -38,7 +39,7 @@ export async function POST(req: Request) {
 
   const { data: row, error: fetchErr } = await supabase
     .from("admin_otps")
-    .select("code, token_hash, expires_at")
+    .select("code, expires_at")
     .eq("email", email)
     .single();
 
@@ -55,8 +56,27 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid code." }, { status: 400 });
   }
 
-  // Code is valid — delete it (single use) and return the token hash.
+  // Code is valid — delete it (single use).
   await supabase.from("admin_otps").delete().eq("email", email);
 
-  return NextResponse.json({ token_hash: row.token_hash });
+  // Generate a fresh magic link right now. The action_link is live immediately
+  // and the client navigates to it, which redirects back to /auth/callback.
+  const appUrl =
+    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? "";
+
+  const { data: linkData, error: linkErr } = await supabase.auth.admin.generateLink({
+    type: "magiclink",
+    email,
+    options: { redirectTo: `${appUrl}/auth/callback` },
+  });
+
+  if (linkErr || !linkData.properties?.action_link) {
+    console.error("[verify-otp] generateLink error:", linkErr?.message);
+    return NextResponse.json(
+      { error: "Code verified but could not create session link. Try again." },
+      { status: 500 },
+    );
+  }
+
+  return NextResponse.json({ action_link: linkData.properties.action_link });
 }

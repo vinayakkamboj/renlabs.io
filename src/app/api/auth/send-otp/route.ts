@@ -1,11 +1,8 @@
 /**
  * POST /api/auth/send-otp
  *
- * Generates a 6-digit code entirely on our backend (independent of Supabase's
- * OTP length setting), stores it alongside the hashed_token from generateLink,
- * then delivers the code via our own SMTP. The frontend verifies by POSTing
- * the code to /api/auth/verify-otp, which returns the hashed_token to exchange
- * for a session — so the digit count is always exactly 6, fully backend-controlled.
+ * Generates a 6-digit code entirely on our backend, stores it in admin_otps,
+ * and delivers it via our own SMTP. Verification happens in /api/auth/verify-otp.
  */
 
 export const runtime = "nodejs";
@@ -39,54 +36,23 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  const supabase = createAdminClient();
-
-  // 1. generateLink mints a Supabase session token (no email sent). We ignore
-  //    email_otp (its length depends on Supabase config) and only take hashed_token
-  //    so we can return it during verification to exchange for a real session.
-  const { data, error: genError } = await supabase.auth.admin.generateLink({
-    type: "magiclink",
-    email,
-  });
-
-  if (genError) {
-    console.error("[send-otp] generateLink error:", genError.message);
-    return NextResponse.json(
-      {
-        error:
-          `Could not generate a sign-in link: ${genError.message}. ` +
-          `(If the user doesn't exist, create ${email} under Supabase → Auth → Users first.)`,
-      },
-      { status: 500 },
-    );
-  }
-
-  const tokenHash = data.properties?.hashed_token;
-  if (!tokenHash) {
-    console.error("[send-otp] No hashed_token returned from generateLink");
-    return NextResponse.json(
-      { error: "Supabase did not return a session token. Check Auth → Providers → Email is enabled." },
-      { status: 500 },
-    );
-  }
-
-  // 2. Generate our own 6-digit code and store it with the token hash.
   const code = generate6DigitCode();
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
 
+  const supabase = createAdminClient();
+
   const { error: storeErr } = await supabase
     .from("admin_otps")
-    .upsert({ email, code, token_hash: tokenHash, expires_at: expiresAt });
+    .upsert({ email, code, expires_at: expiresAt });
 
   if (storeErr) {
     console.error("[send-otp] Failed to store OTP:", storeErr.message);
     return NextResponse.json(
-      { error: `Could not store sign-in code: ${storeErr.message}` },
+      { error: `Could not create sign-in code: ${storeErr.message}` },
       { status: 500 },
     );
   }
 
-  // 3. Send the 6-digit code via our own SMTP.
   if (!isSmtpConfigured()) {
     return NextResponse.json(
       {
@@ -104,10 +70,7 @@ export async function POST(req: Request) {
   } catch (sendErr) {
     const msg = sendErr instanceof Error ? sendErr.message : String(sendErr);
     console.error("[send-otp] SMTP send failed:", msg);
-    return NextResponse.json(
-      { error: `Email delivery failed: ${msg}` },
-      { status: 502 },
-    );
+    return NextResponse.json({ error: `Email delivery failed: ${msg}` }, { status: 502 });
   }
 
   return NextResponse.json({ ok: true });

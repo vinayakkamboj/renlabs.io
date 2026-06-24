@@ -108,23 +108,17 @@ export function AdminLogin() {
     setPending(true);
     setError(null);
     try {
-      // Verify against our backend (which controls the 6-digit code).
       const res = await fetch("/api/auth/verify-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, code: otpCode }),
       });
-      const data = (await res.json()) as { token_hash?: string; error?: string };
+      const data = (await res.json()) as { action_link?: string; error?: string };
       if (!res.ok) throw new Error(data.error ?? "Invalid code.");
 
-      // Exchange the token hash for a real Supabase session.
-      const supabase = createClient();
-      const { error } = await supabase.auth.verifyOtp({
-        token_hash: data.token_hash!,
-        type: "magiclink",
-      });
-      if (error) throw error;
-      await handlePostAuth();
+      // Navigate to the fresh magic link — Supabase redirects back to
+      // /auth/callback which exchanges the code for a session.
+      window.location.href = data.action_link!;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Invalid code.");
       setPending(false);
