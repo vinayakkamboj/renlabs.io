@@ -204,27 +204,27 @@ export function AdminLogin() {
           <span className="font-serif text-[1.4rem] font-medium tracking-tight">Enter your code</span>
         </div>
         <p className="mt-3 max-w-[38ch] text-center text-[13.5px] text-dusk-muted">
-          We sent a sign-in code to <strong className="text-dusk">{email}</strong>. Check your inbox.
+          We sent a 6-digit code to <strong className="text-dusk">{email}</strong>. Check your inbox.
         </p>
         <form onSubmit={verifyOtp} className="mt-8 w-full max-w-sm space-y-3">
           <input
             type="text"
             inputMode="numeric"
             pattern="[0-9]*"
-            maxLength={10}
+            maxLength={6}
             required
             autoFocus
-            placeholder="Enter code"
+            placeholder="000000"
             value={otpCode}
-            onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 10))}
-            className={inputClass + " text-center tracking-[0.3em] text-lg"}
+            onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            className={inputClass + " text-center tracking-[0.4em] text-lg"}
           />
           {error && (
             <p className="rounded-xl bg-signal-red/10 px-4 py-2.5 text-[13px] text-signal-red">{error}</p>
           )}
           <button
             type="submit"
-            disabled={pending || otpCode.length < 6}
+            disabled={pending || otpCode.length !== 6}
             className="h-11 w-full rounded-xl bg-brass text-[14px] font-medium text-carbon transition-colors hover:bg-brass-deep disabled:opacity-50"
           >
             {pending ? "Verifying…" : "Sign in"}
@@ -317,7 +317,7 @@ export function AdminLogin() {
               className={inputClass}
             />
             <p className="text-[12px] text-dusk-faint">
-              We&apos;ll email you a sign-in code — no password needed.
+              We&apos;ll email you a 6-digit sign-in code — no password needed.
             </p>
             {error && (
               <p className="rounded-xl bg-signal-red/10 px-4 py-2.5 text-[13px] text-signal-red">{error}</p>

@@ -61,7 +61,7 @@ export function otpEmail(code: string): OtpEmail {
               <p style="margin:0 0 8px;font-family:'SF Mono',SFMono-Regular,Menlo,monospace;font-size:10px;font-weight:600;letter-spacing:.15em;text-transform:uppercase;color:#6b665a;">Admin sign-in</p>
               <h1 style="margin:0 0 18px;font-family:Georgia,'Iowan Old Style',serif;font-size:25px;font-weight:600;color:#e9e4d8;letter-spacing:-.02em;line-height:1.2;">Your sign-in code</h1>
               <p style="margin:0 0 30px;font-size:14px;color:#97917f;line-height:1.65;">
-                Enter this code on the Ren Labs admin login screen.
+                Enter this 6-digit code on the Ren Labs admin login screen.
                 It expires in <strong style="color:#e9e4d8;font-weight:600;">10 minutes</strong>.
               </p>
 
