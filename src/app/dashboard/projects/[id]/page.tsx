@@ -351,7 +351,8 @@ export default async function ProjectDetailPage({ params }: PageProps) {
           <form
             action={async () => {
               "use server";
-              await deleteProject(id);
+              const res = await deleteProject(id);
+              if (res.ok) redirect("/dashboard/projects");
             }}
           >
             <button

@@ -56,6 +56,9 @@ interface WorkspaceState {
   setActiveFile: (path: string) => void;
   setModelTier: (tier: ModelTierId) => void;
   updateFileContent: (path: string, content: string) => void;
+  /** Replace the whole file set (e.g. after autonomous agents edit the project
+   *  server-side) and refresh the preview so changes show immediately. */
+  replaceFiles: (files: ProjectFile[]) => void;
   refreshViewer: () => void;
   sendMessage: (text: string, images?: string[]) => Promise<void>;
   /** Abort an in-flight build. Stops the stream and leaves files untouched. */
@@ -199,6 +202,19 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       f.path === path ? { ...f, content } : f,
     );
     set({ projectFiles: files });
+    persist(get().projectId, files, get().messages);
+  },
+
+  replaceFiles: (files) => {
+    if (!files.length) return;
+    set((s) => ({
+      projectFiles: files,
+      viewerKey: s.viewerKey + 1,
+      activeFile:
+        files.find((f) => f.path === "src/App.tsx")?.path ??
+        files[0]?.path ??
+        s.activeFile,
+    }));
     persist(get().projectId, files, get().messages);
   },
 

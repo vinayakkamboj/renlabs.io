@@ -21,6 +21,8 @@ export interface RunAgentTaskResult {
   filesChanged?: number;
   followUpTasks?: number;
   reportId?: string;
+  /** One-line summary of what the agent did this run (the report title). */
+  plan?: string;
 }
 
 interface AgentContext {
@@ -524,6 +526,7 @@ export async function runAgentTask(
       filesChanged: changedFiles.length,
       followUpTasks: followUpIds.length,
       reportId,
+      plan,
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

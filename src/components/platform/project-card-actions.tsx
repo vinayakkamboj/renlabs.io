@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useTransition, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { ExternalLink, Loader2, MoreHorizontal, Trash2 } from "lucide-react";
 import Link from "next/link";
+import { toast } from "sonner";
 import { deleteProject } from "@/lib/actions/projects";
 
 interface ProjectCardActionsProps {
@@ -11,6 +13,7 @@ interface ProjectCardActionsProps {
 }
 
 export function ProjectCardActions({ projectId, projectName }: ProjectCardActionsProps) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -33,7 +36,16 @@ export function ProjectCardActions({ projectId, projectName }: ProjectCardAction
       return;
     }
     startTransition(async () => {
-      await deleteProject(projectId);
+      const res = await deleteProject(projectId);
+      if (res.ok) {
+        toast.success("Project deleted");
+        setOpen(false);
+        setConfirming(false);
+        // Stay where we are — the list revalidates and the card drops out.
+        router.refresh();
+      } else {
+        toast.error(res.error ?? "Could not delete project");
+      }
     });
   }
 

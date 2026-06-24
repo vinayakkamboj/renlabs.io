@@ -223,11 +223,16 @@ export async function updateProjectBrief(
 }
 
 /**
- * Delete a project row and redirect back to the projects list.
+ * Delete a project row. Does NOT redirect — callers decide where to go next, so
+ * deleting from a dashboard card simply removes the card in place (the card
+ * revalidates the list), while the project detail page redirects to the list
+ * itself after the row is gone.
  */
-export async function deleteProject(id: string): Promise<void> {
+export async function deleteProject(
+  id: string,
+): Promise<{ ok: boolean; error?: string }> {
   if (!isSupabaseConfigured()) {
-    throw new Error("Supabase is not configured.");
+    return { ok: false, error: "Supabase is not configured." };
   }
 
   const supabase = await createClient();
@@ -236,7 +241,7 @@ export async function deleteProject(id: string): Promise<void> {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    redirect("/login");
+    return { ok: false, error: "Not signed in." };
   }
 
   const { error } = await supabase
@@ -246,10 +251,10 @@ export async function deleteProject(id: string): Promise<void> {
     .eq("user_id", user.id); // RLS double-check
 
   if (error) {
-    throw new Error(`Failed to delete project: ${error.message}`);
+    return { ok: false, error: error.message };
   }
 
   revalidatePath("/dashboard/projects");
   revalidatePath("/dashboard");
-  redirect("/dashboard/projects");
+  return { ok: true };
 }

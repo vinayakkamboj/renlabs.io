@@ -18,6 +18,7 @@ import {
   Eye,
   Github,
   Link2,
+  Users,
   UserPlus,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -31,12 +32,13 @@ import { GitHubPushModal } from "@/components/workspace/github-push-modal";
 import { CreditsBadge } from "@/components/workspace/credits-badge";
 import { ProfileMenu } from "@/components/workspace/profile-menu";
 import { SupabaseConnectModal } from "@/components/workspace/supabase-connect-modal";
+import { AgentWorkspace } from "@/components/workspace/agent-workspace";
 import { useWorkspaceStore, loadPersisted } from "@/lib/builder/store";
 import { downloadProjectZip } from "@/lib/builder/download";
 import type { ProjectFile, BuildMessage } from "@/lib/builder/types";
 import { cn } from "@/lib/utils";
 
-type CenterView = "editor" | "split" | "preview";
+type CenterView = "editor" | "split" | "preview" | "agents";
 
 interface WorkspaceShellProps {
   projectId: string;
@@ -142,6 +144,12 @@ export function WorkspaceShell({
             icon={<Eye className="size-3.5" />}
             label="Preview"
           />
+          <ViewToggle
+            active={centerView === "agents"}
+            onClick={() => setCenterView("agents")}
+            icon={<Users className="size-3.5" />}
+            label="Agents"
+          />
         </div>
 
         {/* Right: toolbar actions */}
@@ -192,6 +200,8 @@ export function WorkspaceShell({
               <div className="flex h-full items-center justify-center bg-carbon text-[13px] text-dusk-faint">
                 Loading workspace…
               </div>
+            ) : centerView === "agents" ? (
+              <AgentWorkspace projectId={projectId} projectName={projectName} />
             ) : (
               <div className="flex h-full">
                 {centerView !== "preview" && (
