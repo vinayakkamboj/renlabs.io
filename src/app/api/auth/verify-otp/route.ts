@@ -59,15 +59,15 @@ export async function POST(req: Request) {
   // Code is valid — delete it (single use).
   await supabase.from("admin_otps").delete().eq("email", email);
 
-  // Generate a fresh magic link right now. The action_link is live immediately
-  // and the client navigates to it, which redirects back to /auth/callback.
-  const appUrl =
-    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? "";
+  // Generate a fresh magic link right now. Use the request's own origin so the
+  // callback lands on admin.renlabs.io, not the main app domain. Pass next=/admin
+  // so the callback redirects straight to the admin dashboard after session setup.
+  const origin = new URL(req.url).origin;
 
   const { data: linkData, error: linkErr } = await supabase.auth.admin.generateLink({
     type: "magiclink",
     email,
-    options: { redirectTo: `${appUrl}/auth/callback` },
+    options: { redirectTo: `${origin}/auth/callback?next=/admin` },
   });
 
   if (linkErr || !linkData.properties?.action_link) {
