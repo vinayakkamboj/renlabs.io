@@ -150,190 +150,60 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }`;
 
-const APP_TSX = `import { HashRouter, Routes, Route, NavLink, Link } from "react-router-dom";
-import { ArrowRight, Zap, Shield, Layers, BarChart2 } from "lucide-react";
-import { cn } from "./lib/utils";
+const APP_TSX = `import { ArrowRight, Sparkles } from "lucide-react";
 
-const NAV = [
-  { to: "/", label: "Home" },
-  { to: "/features", label: "Features" },
-  { to: "/about", label: "About" },
+/**
+ * Blank-canvas launchpad. There is no product here yet — this is the starting
+ * point. Describe what you want in the chat and Ren Code replaces this entire
+ * screen with your real app: a landing page, a SaaS dashboard, a marketplace,
+ * a game, a tool — anything.
+ */
+const IDEAS = [
+  "A task board with drag-and-drop",
+  "A finance dashboard with charts",
+  "A travel booking marketplace",
+  "A real-time chat app",
 ];
-
-function Logo() {
-  return (
-    <Link to="/" className="flex items-center gap-2.5">
-      <span className="flex size-7 items-center justify-center rounded-lg bg-primary">
-        <BarChart2 className="size-4 text-primary-foreground" strokeWidth={2.5} />
-      </span>
-      <span className="text-[15px] font-bold tracking-tight text-foreground">Acme</span>
-    </Link>
-  );
-}
-
-function Navbar() {
-  return (
-    <header className="sticky top-0 z-40 border-b border-border bg-background/90 backdrop-blur-md">
-      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
-        <Logo />
-        <nav className="hidden items-center gap-0.5 md:flex">
-          {NAV.map(({ to, label }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={to === "/"}
-              className={({ isActive }) =>
-                cn(
-                  "rounded-lg px-3.5 py-1.5 text-[13.5px] font-medium transition-colors",
-                  isActive ? "text-foreground" : "text-muted-foreground hover:text-foreground",
-                )
-              }
-            >
-              {label}
-            </NavLink>
-          ))}
-        </nav>
-        <div className="flex items-center gap-2.5">
-          <Link
-            to="/about"
-            className="hidden text-[13.5px] font-medium text-muted-foreground transition-colors hover:text-foreground md:block"
-          >
-            Sign in
-          </Link>
-          <button className="rounded-lg bg-primary px-4 py-2 text-[13.5px] font-semibold text-primary-foreground transition-opacity hover:opacity-90">
-            Get started
-          </button>
-        </div>
-      </div>
-    </header>
-  );
-}
-
-function Footer() {
-  return (
-    <footer className="border-t border-border">
-      <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 px-6 py-10 text-[13px] text-muted-foreground sm:flex-row">
-        <div className="flex items-center gap-2">
-          <span className="flex size-5 items-center justify-center rounded bg-primary">
-            <BarChart2 className="size-3 text-primary-foreground" strokeWidth={2.5} />
-          </span>
-          <span className="font-semibold text-foreground">Acme</span>
-          <span className="ml-2">© {new Date().getFullYear()}</span>
-        </div>
-        <div className="flex items-center gap-6">
-          <Link to="/features" className="transition-colors hover:text-foreground">Features</Link>
-          <Link to="/about" className="transition-colors hover:text-foreground">About</Link>
-        </div>
-      </div>
-    </footer>
-  );
-}
-
-const FEATURES = [
-  { icon: Zap, title: "Instant performance", body: "Every interaction is fast. No loading spinners, no wasted time." },
-  { icon: Shield, title: "Built-in security", body: "Designed secure from day one — sensible defaults, no config required." },
-  { icon: Layers, title: "Fully composable", body: "Modular building blocks that fit together exactly how your product needs." },
-];
-
-function HomePage() {
-  return (
-    <>
-      <section className="mx-auto max-w-6xl px-6 pb-12 pt-28 text-center">
-        <p className="text-[13px] font-semibold uppercase tracking-widest text-primary">
-          Now in early access
-        </p>
-        <h1 className="mx-auto mt-5 max-w-3xl text-[3.25rem] font-extrabold leading-[1.1] tracking-tight text-foreground">
-          The foundation for whatever you want to build.
-        </h1>
-        <p className="mx-auto mt-6 max-w-lg text-[17px] leading-relaxed text-muted-foreground">
-          Describe your idea and Ren Code turns it into a complete, working product
-          — pages, navigation, state, and a design that fits.
-        </p>
-        <div className="mt-10 flex items-center justify-center gap-3">
-          <button className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-3 text-[14px] font-semibold text-primary-foreground transition-opacity hover:opacity-90">
-            Get started free <ArrowRight className="size-4" />
-          </button>
-          <Link
-            to="/features"
-            className="rounded-xl border border-border px-6 py-3 text-[14px] font-semibold text-foreground transition-colors hover:bg-secondary"
-          >
-            See features
-          </Link>
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-6xl px-6 pb-28">
-        <div className="grid gap-4 sm:grid-cols-3">
-          {FEATURES.map(({ icon: Icon, title, body }) => (
-            <div
-              key={title}
-              className="rounded-2xl border border-border bg-card p-7 transition-shadow hover:shadow-sm"
-            >
-              <div className="flex size-11 items-center justify-center rounded-xl bg-primary/10">
-                <Icon className="size-5 text-primary" />
-              </div>
-              <h3 className="mt-5 text-[15px] font-bold text-foreground">{title}</h3>
-              <p className="mt-2 text-[13.5px] leading-relaxed text-muted-foreground">{body}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-    </>
-  );
-}
-
-function FeaturesPage() {
-  return (
-    <section className="mx-auto max-w-5xl px-6 py-20">
-      <h1 className="text-[2rem] font-extrabold tracking-tight text-foreground">Features</h1>
-      <p className="mt-3 max-w-lg text-[15px] leading-relaxed text-muted-foreground">
-        Everything you need, nothing you don't. Replace this with the real capabilities of your product.
-      </p>
-      <div className="mt-12 grid gap-4 sm:grid-cols-2">
-        {FEATURES.map(({ icon: Icon, title, body }) => (
-          <div key={title} className="flex gap-5 rounded-2xl border border-border bg-card p-6">
-            <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10">
-              <Icon className="size-5 text-primary" />
-            </div>
-            <div>
-              <h3 className="text-[15px] font-bold text-foreground">{title}</h3>
-              <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted-foreground">{body}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function AboutPage() {
-  return (
-    <section className="mx-auto max-w-2xl px-6 py-20">
-      <h1 className="text-[2rem] font-extrabold tracking-tight text-foreground">About</h1>
-      <p className="mt-5 text-[16px] leading-relaxed text-muted-foreground">
-        This is a starter with a top navigation bar and working multi-page routing. Tell Ren Code
-        what you want to build and it will reshape this into your product — a landing page, a SaaS
-        app, a marketplace, a tool, a dashboard, whatever fits.
-      </p>
-    </section>
-  );
-}
 
 export default function App() {
   return (
-    <HashRouter>
-      <div className="flex min-h-full flex-col">
-        <Navbar />
-        <main className="flex-1">
-          <Routes>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/features" element={<FeaturesPage />} />
-            <Route path="/about" element={<AboutPage />} />
-          </Routes>
-        </main>
-        <Footer />
+    <div className="relative flex min-h-full items-center justify-center overflow-hidden bg-background px-6">
+      {/* Ambient glow */}
+      <div className="pointer-events-none absolute left-1/2 top-1/3 size-[480px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary/25 blur-[120px]" />
+      <div className="pointer-events-none absolute bottom-0 right-0 size-[320px] rounded-full bg-accent/30 blur-[100px]" />
+
+      <div className="relative z-10 mx-auto max-w-2xl py-20 text-center">
+        <span className="inline-flex items-center gap-2 rounded-full border border-border bg-card/60 px-3.5 py-1.5 text-[12px] font-semibold uppercase tracking-widest text-primary backdrop-blur">
+          <Sparkles className="size-3.5" />
+          Your canvas is ready
+        </span>
+
+        <h1 className="mt-7 bg-gradient-to-br from-foreground to-foreground/50 bg-clip-text text-[3.5rem] font-black leading-[1.04] tracking-tight text-transparent sm:text-[4.25rem]">
+          Begin here.
+        </h1>
+
+        <p className="mx-auto mt-5 max-w-md text-[17px] leading-relaxed text-muted-foreground">
+          This is a blank slate — not a fixed app. Tell Ren Code what you want to
+          build and watch it come to life, fully designed and working.
+        </p>
+
+        <div className="mt-9 flex flex-wrap items-center justify-center gap-2.5">
+          {IDEAS.map((idea) => (
+            <span
+              key={idea}
+              className="flex items-center gap-1.5 rounded-full border border-border bg-card/70 px-3.5 py-2 text-[13px] font-medium text-foreground backdrop-blur transition-colors hover:border-primary/40"
+            >
+              <ArrowRight className="size-3.5 text-primary" />
+              {idea}
+            </span>
+          ))}
+        </div>
+
+        <p className="mt-10 text-[13px] text-muted-foreground/70">
+          Describe your idea in the chat to start →
+        </p>
       </div>
-    </HashRouter>
+    </div>
   );
 }`;
 
@@ -372,14 +242,14 @@ every change and updates it whenever files change.
 
 ## Overview
 
-A fresh React + Vite + Tailwind starter: a real web app shell with a top navigation bar,
-a home/landing page, and multi-page routing. No product purpose has been defined yet — the
-first build reshapes this into whatever the user describes (landing page, SaaS app,
-marketplace, tool, dashboard, etc.).
+A blank canvas. \`src/App.tsx\` currently holds only a "Begin here" launchpad screen — there is
+NO product yet. The first build replaces this entirely with whatever the user describes (landing
+page, SaaS app, marketplace, game, tool, dashboard, etc.). Do not preserve the launchpad screen;
+it exists only as a starting placeholder.
 
-## Architecture
+## Architecture (target — build into this on the first request)
 
-- \`src/App.tsx\` — thin: HashRouter + Routes + top Navbar + Footer layout only. No UI logic here.
+- \`src/App.tsx\` — thin: HashRouter + Routes + top Navbar/Footer layout only. No UI logic here.
 - \`src/index.css\` — design tokens (\`:root\` + \`[data-theme="dark"]\`) and base styles.
 - \`src/lib/utils.ts\` — the \`cn()\` className helper.
 - \`src/pages/\` — one file per route/view.
@@ -390,15 +260,10 @@ marketplace, tool, dashboard, etc.).
 
 ## Routing
 
-Uses react-router-dom v6 with **HashRouter** (reliable inside the preview iframe). Layout is a
+Use react-router-dom v6 with **HashRouter** (reliable inside the preview iframe). Default to a
 top navigation bar (not a sidebar) — the brand logo links to \`/\` and \`NavLink\`s switch pages.
-Current routes:
-- \`/\` — HomePage (hero + features)
-- \`/features\` — FeaturesPage
-- \`/about\` — AboutPage
-
-Use a sidebar layout ONLY when the product is genuinely an app dashboard/admin tool; otherwise
-keep the top-navbar + home-page shell.
+Use a sidebar layout ONLY when the product is genuinely an app dashboard/admin tool. The launchpad
+screen has no routing yet — the first build introduces App.tsx routing for the real product.
 
 ## State
 

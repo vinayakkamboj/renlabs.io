@@ -377,18 +377,40 @@ function ModelIndicator() {
   );
 }
 
+/**
+ * Curated starter prompts — diverse across product types and written with enough
+ * specificity (audience, key screens, vibe) that Astra produces something
+ * genuinely impressive on the first build, not a generic shell. `label` is the
+ * chip; `prompt` is the detailed instruction actually sent.
+ */
 const EXAMPLES = [
   {
     icon: Layers,
-    text: "Build a project management board with draggable columns",
+    tag: "SaaS",
+    label: "Analytics dashboard",
+    prompt:
+      "Build a sleek SaaS analytics dashboard for a product team: a sidebar app shell, an overview page with KPI cards, a revenue area chart, a recent-activity feed, and a data table of customers with status badges, search, and sorting. Dark, modern, data-dense but elegant — use realistic mock data.",
   },
   {
     icon: Sparkles,
-    text: "Create a landing page for a coffee subscription brand",
+    tag: "Marketplace",
+    label: "Marketplace storefront",
+    prompt:
+      "Build a polished marketplace for handmade home goods: a hero home page, a browsable product grid with category filters and price, a product detail page with image gallery and add-to-cart, and a slide-over cart with a running total. Warm editorial design, real product names and prices.",
   },
   {
     icon: Wand2,
-    text: "Make an expense tracker with charts and categories",
+    tag: "Tool",
+    label: "Habit tracker",
+    prompt:
+      "Build a beautiful habit tracker: a weekly grid where you check off habits per day, streak counters with flame indicators, a progress ring for the week, and an add-habit modal. Calm, focused design with smooth micro-interactions and persistent state via a Zustand store.",
+  },
+  {
+    icon: Sparkles,
+    tag: "Landing",
+    label: "Startup landing page",
+    prompt:
+      "Build a striking startup landing page for an AI note-taking app: a bold gradient hero with one strong headline, a bento feature grid, a 'how it works' section, social-proof testimonials, a pricing section with a highlighted plan, and a final CTA. Award-level type and spacing.",
   },
 ];
 
@@ -403,21 +425,30 @@ function EmptyState() {
         </span>
       </div>
       <p className="mt-4 text-[14px] font-semibold text-dusk">
-        Start building with Astra
+        What do you want to build?
       </p>
-      <p className="mt-1.5 max-w-[30ch] text-[12.5px] leading-relaxed text-dusk-faint">
-        Describe what you want to build. Astra writes the code, wires the
-        state, and renders it live.
+      <p className="mt-1.5 max-w-[32ch] text-[12.5px] leading-relaxed text-dusk-faint">
+        Describe it in a line — Astra designs it, writes the code, wires the
+        state, and renders it live. Or start from one of these:
       </p>
       <div className="mt-5 w-full space-y-2">
-        {EXAMPLES.map(({ icon: Icon, text }) => (
+        {EXAMPLES.map(({ icon: Icon, tag, label, prompt }) => (
           <button
-            key={text}
-            onClick={() => sendMessage(text)}
-            className="flex w-full items-start gap-2.5 rounded-xl border border-carbon-line bg-carbon-raised px-3 py-2.5 text-left transition-all hover:border-carbon-line-strong hover:bg-carbon-high"
+            key={label}
+            onClick={() => sendMessage(prompt)}
+            title={prompt}
+            className="group flex w-full items-center gap-3 rounded-xl border border-carbon-line bg-carbon-raised px-3 py-2.5 text-left transition-all hover:border-brass/40 hover:bg-carbon-high"
           >
-            <Icon className="mt-0.5 size-3.5 shrink-0 text-brass/50" />
-            <span className="text-[12px] leading-relaxed text-dusk-muted">{text}</span>
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-lg border border-carbon-line bg-carbon text-brass/70 transition-colors group-hover:border-brass/30 group-hover:text-brass">
+              <Icon className="size-3.5" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[12.5px] font-medium text-dusk">{label}</span>
+              <span className="block truncate text-[11px] text-dusk-faint">{prompt}</span>
+            </span>
+            <span className="shrink-0 rounded-full bg-carbon px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.1em] text-dusk-faint">
+              {tag}
+            </span>
           </button>
         ))}
       </div>

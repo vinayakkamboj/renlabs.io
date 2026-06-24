@@ -30,6 +30,7 @@ import { InviteModal } from "@/components/workspace/invite-modal";
 import { GitHubPushModal } from "@/components/workspace/github-push-modal";
 import { CreditsBadge } from "@/components/workspace/credits-badge";
 import { ProfileMenu } from "@/components/workspace/profile-menu";
+import { SupabaseConnectModal } from "@/components/workspace/supabase-connect-modal";
 import { useWorkspaceStore, loadPersisted } from "@/lib/builder/store";
 import { downloadProjectZip } from "@/lib/builder/download";
 import type { ProjectFile, BuildMessage } from "@/lib/builder/types";
@@ -67,6 +68,7 @@ export function WorkspaceShell({
   const [ready, setReady] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [pushOpen, setPushOpen] = useState(false);
+  const [supabaseOpen, setSupabaseOpen] = useState(false);
 
   useEffect(() => {
     const persisted = loadPersisted(projectId);
@@ -211,7 +213,7 @@ export function WorkspaceShell({
                         : "flex-1",
                     )}
                   >
-                    {/* Supabase connection bar */}
+                    {/* Per-project Supabase connection bar */}
                     <div className="flex h-9 shrink-0 items-center gap-2 border-b border-carbon-line px-3">
                       <Database className={cn("size-3.5 shrink-0", supabaseConnected ? "text-signal-green" : "text-dusk-faint")} />
                       {supabaseConnected ? (
@@ -219,24 +221,24 @@ export function WorkspaceShell({
                           <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-dusk-muted">
                             {supabaseUrl}
                           </span>
-                          <Link
-                            href="/dashboard/integrations"
+                          <button
+                            onClick={() => setSupabaseOpen(true)}
                             className="shrink-0 text-[11px] text-dusk-faint transition-colors hover:text-dusk"
                           >
                             Manage
-                          </Link>
+                          </button>
                         </>
                       ) : (
                         <>
                           <span className="flex-1 text-[11.5px] text-dusk-faint">
-                            No Supabase connected
+                            No backend connected to this project
                           </span>
-                          <Link
-                            href="/dashboard/integrations"
-                            className="shrink-0 text-[11px] font-medium text-brass transition-colors hover:text-brass-deep"
+                          <button
+                            onClick={() => setSupabaseOpen(true)}
+                            className="shrink-0 rounded-md border border-brass/30 bg-brass/10 px-2 py-0.5 text-[11px] font-medium text-brass transition-colors hover:bg-brass/20"
                           >
-                            Connect
-                          </Link>
+                            Connect backend
+                          </button>
                         </>
                       )}
                     </div>
@@ -270,6 +272,15 @@ export function WorkspaceShell({
           repoFullName={repoFullName}
           repoDefaultBranch={repoDefaultBranch}
           onClose={() => setPushOpen(false)}
+        />
+      )}
+
+      {supabaseOpen && (
+        <SupabaseConnectModal
+          projectId={projectId}
+          connected={supabaseConnected}
+          projectUrl={supabaseUrl}
+          onClose={() => setSupabaseOpen(false)}
         />
       )}
     </div>
