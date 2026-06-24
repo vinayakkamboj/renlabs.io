@@ -1,21 +1,11 @@
 /**
  * POST /api/auth/send-otp
  *
- * Generates a 6-digit OTP via Supabase Admin and sends it ourselves over SMTP.
- * This deliberately does NOT use Supabase's email service — admin.generateLink
- * only mints the token (no email), and we deliver our own branded email through
- * our own SMTP transport. That way "Error sending magic link email" from
- * Supabase's mailer can never block admin sign-in, and the email always matches
- * our design.
- *
- * The client then verifies with supabase.auth.verifyOtp({ email, token, type:
- * "email" }) — the same code we generated here.
- *
- * Required env vars:
- *   NEXT_PUBLIC_SUPABASE_URL
- *   SUPABASE_SERVICE_ROLE_KEY
- *   SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS  (copy from your Supabase SMTP)
- *   SMTP_FROM   (optional, e.g. "Ren Labs <noreply@renlabs.io>")
+ * Generates a 6-digit code entirely on our backend (independent of Supabase's
+ * OTP length setting), stores it alongside the hashed_token from generateLink,
+ * then delivers the code via our own SMTP. The frontend verifies by POSTing
+ * the code to /api/auth/verify-otp, which returns the hashed_token to exchange
+ * for a session — so the digit count is always exactly 6, fully backend-controlled.
  */
 
 export const runtime = "nodejs";
@@ -26,6 +16,10 @@ import { sendMail, isSmtpConfigured } from "@/lib/email/mailer";
 import { otpEmail } from "@/lib/email/templates";
 
 const ADMIN_EMAILS = ["vinayakkamboj01@gmail.com", "vinayak@renlabs.io"];
+
+function generate6DigitCode(): string {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
 
 export async function POST(req: Request) {
   let email: string;
@@ -47,8 +41,9 @@ export async function POST(req: Request) {
 
   const supabase = createAdminClient();
 
-  // 1. Mint the OTP server-side. generateLink does NOT send any email — it only
-  //    returns the token (email_otp) for us to deliver however we want.
+  // 1. generateLink mints a Supabase session token (no email sent). We ignore
+  //    email_otp (its length depends on Supabase config) and only take hashed_token
+  //    so we can return it during verification to exchange for a real session.
   const { data, error: genError } = await supabase.auth.admin.generateLink({
     type: "magiclink",
     email,
@@ -59,35 +54,45 @@ export async function POST(req: Request) {
     return NextResponse.json(
       {
         error:
-          `Could not generate a code: ${genError.message}. ` +
-          `(If this says the user doesn't exist, create ${email} under ` +
-          `Supabase → Auth → Users first.)`,
+          `Could not generate a sign-in link: ${genError.message}. ` +
+          `(If the user doesn't exist, create ${email} under Supabase → Auth → Users first.)`,
       },
       { status: 500 },
     );
   }
 
-  const code = data.properties?.email_otp;
-  if (!code) {
-    console.error("[send-otp] No email_otp returned from generateLink");
+  const tokenHash = data.properties?.hashed_token;
+  if (!tokenHash) {
+    console.error("[send-otp] No hashed_token returned from generateLink");
     return NextResponse.json(
-      {
-        error:
-          "Supabase did not return an OTP. Enable Email OTP under " +
-          "Auth → Providers → Email.",
-      },
+      { error: "Supabase did not return a session token. Check Auth → Providers → Email is enabled." },
       { status: 500 },
     );
   }
 
-  // 2. Send our own branded email via our own SMTP.
+  // 2. Generate our own 6-digit code and store it with the token hash.
+  const code = generate6DigitCode();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+
+  const { error: storeErr } = await supabase
+    .from("admin_otps")
+    .upsert({ email, code, token_hash: tokenHash, expires_at: expiresAt });
+
+  if (storeErr) {
+    console.error("[send-otp] Failed to store OTP:", storeErr.message);
+    return NextResponse.json(
+      { error: `Could not store sign-in code: ${storeErr.message}` },
+      { status: 500 },
+    );
+  }
+
+  // 3. Send the 6-digit code via our own SMTP.
   if (!isSmtpConfigured()) {
     return NextResponse.json(
       {
         error:
-          "SMTP is not configured for the app. Add SMTP_HOST, SMTP_PORT, " +
-          "SMTP_USER, SMTP_PASS (and SMTP_FROM) to your environment — use the " +
-          "same values as your Supabase SMTP settings.",
+          "SMTP is not configured. Add SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS " +
+          "(and optionally SMTP_FROM) to your environment.",
       },
       { status: 500 },
     );
@@ -100,7 +105,7 @@ export async function POST(req: Request) {
     const msg = sendErr instanceof Error ? sendErr.message : String(sendErr);
     console.error("[send-otp] SMTP send failed:", msg);
     return NextResponse.json(
-      { error: `Email delivery failed over SMTP: ${msg}` },
+      { error: `Email delivery failed: ${msg}` },
       { status: 502 },
     );
   }

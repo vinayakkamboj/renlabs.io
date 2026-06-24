@@ -104,15 +104,24 @@ export function AdminLogin() {
 
   async function verifyOtp(e: React.FormEvent) {
     e.preventDefault();
-    if (pending || !otpCode) return;
+    if (pending || otpCode.length !== 6) return;
     setPending(true);
     setError(null);
     try {
+      // Verify against our backend (which controls the 6-digit code).
+      const res = await fetch("/api/auth/verify-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, code: otpCode }),
+      });
+      const data = (await res.json()) as { token_hash?: string; error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Invalid code.");
+
+      // Exchange the token hash for a real Supabase session.
       const supabase = createClient();
       const { error } = await supabase.auth.verifyOtp({
-        email,
-        token: otpCode,
-        type: "email",
+        token_hash: data.token_hash!,
+        type: "magiclink",
       });
       if (error) throw error;
       await handlePostAuth();
