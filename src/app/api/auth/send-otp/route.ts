@@ -203,7 +203,25 @@ export async function POST(req: Request) {
     }
 
     console.error("[send-otp] Supabase fallback also failed:", fallback.error.message);
+
+    // Supabase rate-limits OTP requests to once per 60 seconds for security.
+    // If Brevo failed and Supabase also fails immediately, the user probably
+    // clicked twice, or Brevo consumed the cooldown window. Guide them to wait.
+    const isRateLimit =
+      fallback.error.message?.includes("after") ||
+      fallback.error.message?.toLowerCase().includes("rate limit");
+
     if (ADMIN_EMAILS.includes(email)) {
+      if (isRateLimit) {
+        return NextResponse.json(
+          {
+            error:
+              `Code already sent. For security, you can request a new one after 60 seconds. ` +
+              `(Brevo delivery also failed due to IP restrictions.)`,
+          },
+          { status: 429 },
+        );
+      }
       return NextResponse.json(
         {
           error:
