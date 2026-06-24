@@ -113,12 +113,19 @@ export function AdminLogin() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, code: otpCode }),
       });
-      const data = (await res.json()) as { action_link?: string; error?: string };
+      const data = (await res.json()) as { otp?: string; error?: string };
       if (!res.ok) throw new Error(data.error ?? "Invalid code.");
 
-      // Navigate to the fresh magic link — Supabase redirects back to
-      // /auth/callback which exchanges the code for a session.
-      window.location.href = data.action_link!;
+      // Verify the Supabase OTP directly — no redirects, session is created
+      // on this domain. Middleware then sends /login → /admin on refresh.
+      const supabase = createClient();
+      const { error: otpErr } = await supabase.auth.verifyOtp({
+        email,
+        token: data.otp!,
+        type: "email",
+      });
+      if (otpErr) throw otpErr;
+      await handlePostAuth();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Invalid code.");
       setPending(false);

@@ -59,24 +59,22 @@ export async function POST(req: Request) {
   // Code is valid — delete it (single use).
   await supabase.from("admin_otps").delete().eq("email", email);
 
-  // Generate a fresh magic link right now. Use the request's own origin so the
-  // callback lands on admin.renlabs.io, not the main app domain. Pass next=/admin
-  // so the callback redirects straight to the admin dashboard after session setup.
-  const origin = new URL(req.url).origin;
-
+  // Generate a fresh Supabase OTP. We return the email_otp so the frontend can
+  // call supabase.auth.verifyOtp({ email, token, type: "email" }) directly —
+  // no redirects, no redirect-URL allowlist issues, session created on the
+  // correct domain right in the browser.
   const { data: linkData, error: linkErr } = await supabase.auth.admin.generateLink({
     type: "magiclink",
     email,
-    options: { redirectTo: `${origin}/auth/callback?next=/admin` },
   });
 
-  if (linkErr || !linkData.properties?.action_link) {
+  if (linkErr || !linkData.properties?.email_otp) {
     console.error("[verify-otp] generateLink error:", linkErr?.message);
     return NextResponse.json(
-      { error: "Code verified but could not create session link. Try again." },
+      { error: "Code verified but could not create session token. Try again." },
       { status: 500 },
     );
   }
 
-  return NextResponse.json({ action_link: linkData.properties.action_link });
+  return NextResponse.json({ otp: linkData.properties.email_otp });
 }
