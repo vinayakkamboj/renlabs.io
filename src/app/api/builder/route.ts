@@ -17,6 +17,9 @@
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Allow the orchestrated build (design phase + build phase) the headroom it
+// needs on Vercel. Capped by the plan's actual limit, so this is a ceiling.
+export const maxDuration = 300;
 
 import { NextRequest } from "next/server";
 import { resolveModelTier } from "@/lib/builder/model-tiers";
@@ -33,7 +36,12 @@ import {
   buildRepositoryIntelligence,
   formatIntelligenceForPrompt,
 } from "@/lib/ai/repository-intelligence";
-import { isAstraConfigured, streamAstraText, completeAstraText } from "@/lib/ai/astra";
+import { isAstraConfigured, streamAstraText } from "@/lib/ai/astra";
+import {
+  PLAN_BEGIN_MARKER,
+  PLAN_DONE_MARKER,
+  extractUsage,
+} from "@/lib/ai/usage";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import { deductBuildCredits } from "@/lib/credits/server";
 import { CREDITS_PER_BUILD } from "@/lib/credits/config";
@@ -158,57 +166,6 @@ export async function POST(req: NextRequest) {
     return `${stackPrompt}\n\n${formatIntelligenceForPrompt(intel)}`;
   };
 
-  // ── Design phase (orchestration) ──────────────────────────────────────────
-  // On a fresh build of a new app, Astra first acts as a product architect and
-  // commits to a COMPLETE plan (product, design system, pages, data, state,
-  // home composition, signature moment, file manifest). The build engineer then
-  // implements that locked plan in full — so the app is designed properly and
-  // shipped whole, not improvised in one pass.
-  //
-  // ── Design phase (orchestration) — OPT-IN ─────────────────────────────────
-  // When ASTRA_DESIGN_PHASE=1, a fresh build first runs a quick architect pass
-  // that commits to a COMPLETE plan, which the build engineer then implements.
-  // It is OFF by default because it is a BLOCKING call before any streaming —
-  // with a slow model it leaves the UI sitting on the "Plan" stage. When on, we
-  // keep it fast and safe: lighter model (FIREWORKS_PLANNING_MODEL), LOW
-  // reasoning, tight token cap, and a hard timeout (PLAN_TIMEOUT_MS) that falls
-  // back to building without a plan rather than ever hanging.
-  let buildPlan: string | null = null;
-  const shouldPlan =
-    process.env.ASTRA_DESIGN_PHASE === "1" &&
-    body.isFirstBuild === true &&
-    !isRepo &&
-    !body.repairIssues;
-  if (shouldPlan && lastUser?.content?.trim()) {
-    try {
-      const planRes = await completeAstraText(
-        [
-          { role: "system", content: buildArchitectPrompt() },
-          { role: "user", content: `## Request\n${lastUser.content.trim()}` },
-        ],
-        {
-          maxTokens: 1800,
-          model: planningModelId(),
-          reasoningEffort: "low",
-          signal: AbortSignal.timeout(PLAN_TIMEOUT_MS),
-        },
-      );
-      if (planRes.ok && planRes.text.trim().length > 80) {
-        buildPlan = planRes.text.trim();
-      }
-    } catch {
-      // Planning is best-effort — a timeout or any error just skips the plan.
-    }
-  }
-
-  const system = body.repairIssues
-    ? buildRepairPrompt(body.repairIssues)
-    : isRepo
-      ? repoSystem()
-      : body.isFirstBuild
-        ? buildNewProjectPrompt(buildPlan ?? undefined)
-        : buildEditPrompt();
-
   const images = Array.isArray(body.images) ? body.images.slice(0, 4) : [];
   const apiMessages = body.messages.map((m, idx) => {
     if (idx === body.messages.length - 1 && m.role === "user") {
@@ -221,36 +178,128 @@ export async function POST(req: NextRequest) {
     return { role: m.role, content: m.content };
   });
 
-  // ── 4. Stream from Astra (Fireworks primary, Claude fallback) ─────────────
-  // reasoning_effort=low so GLM 5.2 starts emitting file content quickly instead
-  // of spending minutes on silent chain-of-thought (its reasoning tokens are not
-  // surfaced to the client), which reads as the build being "stuck".
-  const result = await streamAstraText(
-    [
-      { role: "system", content: system },
-      ...apiMessages.slice(-16),
-    ],
-    { maxTokens: MAX_OUTPUT_TOKENS, reasoningEffort: "low" },
-  );
+  // System prompt for the build engineer. When a design phase runs, the locked
+  // plan is injected into this prompt instead (built inside the stream below).
+  const baseSystem = body.repairIssues
+    ? buildRepairPrompt(body.repairIssues)
+    : isRepo
+      ? repoSystem()
+      : body.isFirstBuild
+        ? buildNewProjectPrompt()
+        : buildEditPrompt();
 
-  if (!result.ok) {
-    return Response.json(
-      { error: "upstream_error", detail: result.detail },
-      { status: result.status },
-    );
-  }
+  const buildMessages = (sys: string) => [
+    { role: "system" as const, content: sys },
+    ...apiMessages.slice(-16),
+  ];
 
   const headers: Record<string, string> = {
     "Content-Type": "text/plain; charset=utf-8",
     "Cache-Control": "no-store",
     "x-ren-tier": tier.id,
     "x-ren-credits-deducted": String(creditsDeducted),
-    // Signals the orchestrator ran a full design phase before this build.
-    "x-ren-planned": buildPlan ? "1" : "0",
   };
   if (creditsBalance !== null) {
     headers["x-ren-credits-balance"] = String(creditsBalance);
   }
 
-  return new Response(result.stream, { headers });
+  // ── 4. Orchestrated stream (design phase → build phase) ───────────────────
+  // When the design phase is on (ASTRA_DESIGN_PHASE !== "0"), a fresh build is a
+  // single streamed response with two visible stages:
+  //   1. Architecture plan — streamed LIVE between PLAN_BEGIN/PLAN_DONE markers
+  //      so the user watches Astra design the app (no silent "stuck" wait).
+  //   2. Build — the engineer implements the locked plan, streamed after the
+  //      divider. Planning is time-boxed; if it stalls or errors we build anyway.
+  // reasoning_effort=low keeps GLM 5.2 emitting fast instead of reasoning
+  // silently (its reasoning tokens are not surfaced to the client).
+  const designPhase =
+    process.env.ASTRA_DESIGN_PHASE !== "0" &&
+    body.isFirstBuild === true &&
+    !isRepo &&
+    !body.repairIssues &&
+    Boolean(lastUser?.content?.trim());
+
+  if (!designPhase) {
+    const result = await streamAstraText(buildMessages(baseSystem), {
+      maxTokens: MAX_OUTPUT_TOKENS,
+      reasoningEffort: "low",
+    });
+    if (!result.ok) {
+      return Response.json(
+        { error: "upstream_error", detail: result.detail },
+        { status: result.status },
+      );
+    }
+    headers["x-ren-planned"] = "0";
+    return new Response(result.stream, { headers });
+  }
+
+  headers["x-ren-planned"] = "1";
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  const request = lastUser!.content.trim();
+
+  const combined = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      // 1. Live architecture plan (time-boxed, best-effort).
+      controller.enqueue(encoder.encode(PLAN_BEGIN_MARKER));
+      let planRaw = "";
+      try {
+        const planRes = await streamAstraText(
+          [
+            { role: "system", content: buildArchitectPrompt() },
+            { role: "user", content: `## Request\n${request}` },
+          ],
+          {
+            maxTokens: 1800,
+            model: planningModelId(),
+            reasoningEffort: "low",
+            signal: AbortSignal.timeout(PLAN_TIMEOUT_MS),
+          },
+        );
+        if (planRes.ok) {
+          const reader = planRes.stream.getReader();
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (value) {
+              planRaw += decoder.decode(value, { stream: true });
+              controller.enqueue(value);
+            }
+          }
+        }
+      } catch {
+        // Planning is best-effort — a timeout/error just means we build directly.
+      }
+
+      // 2. Lock the plan and signal the build phase.
+      const plan = extractUsage(planRaw).text.trim();
+      controller.enqueue(encoder.encode(PLAN_DONE_MARKER));
+
+      // 3. Build the app, implementing the locked plan when we have one.
+      const sys = plan.length > 80 ? buildNewProjectPrompt(plan) : baseSystem;
+      const buildRes = await streamAstraText(buildMessages(sys), {
+        maxTokens: MAX_OUTPUT_TOKENS,
+        reasoningEffort: "low",
+      });
+      if (!buildRes.ok) {
+        controller.enqueue(
+          encoder.encode(
+            `The build couldn't be completed. (${buildRes.status}: ${buildRes.detail})`,
+          ),
+        );
+        controller.close();
+        return;
+      }
+      const reader = buildRes.stream.getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) controller.enqueue(value);
+      }
+      controller.close();
+    },
+  });
+
+  return new Response(combined, { headers });
 }

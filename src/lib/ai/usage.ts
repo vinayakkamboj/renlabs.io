@@ -17,6 +17,17 @@ export interface TokenUsage {
 /** ASCII record separator — will never appear in model code/prose output. */
 const RS = "";
 
+/**
+ * Stream dividers for the orchestrated build (design phase + build phase). The
+ * server emits PLAN_BEGIN before streaming the live architecture plan, then
+ * PLAN_DONE once the plan is locked and the build stream starts. The client uses
+ * them to show the plan as live "thinking" feedback and to parse file patches
+ * only from the build portion. Record-separator wrapped so they never collide
+ * with model output.
+ */
+export const PLAN_BEGIN_MARKER = `${RS}${RS}REN_PLAN_BEGIN${RS}${RS}`;
+export const PLAN_DONE_MARKER = `${RS}${RS}REN_PLAN_DONE${RS}${RS}`;
+
 /** Build the trailing usage marker appended to a finished stream. */
 export function formatUsageMarker(usage: TokenUsage): string {
   return `${RS}REN_USAGE:${JSON.stringify(usage)}${RS}`;

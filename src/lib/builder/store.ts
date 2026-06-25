@@ -22,7 +22,11 @@ import {
 } from "./file-patches";
 import { createBaseTemplate } from "./base-template";
 import { DEFAULT_MODEL_TIER, type ModelTierId } from "./model-tiers";
-import { extractUsage } from "@/lib/ai/usage";
+import {
+  extractUsage,
+  PLAN_BEGIN_MARKER,
+  PLAN_DONE_MARKER,
+} from "@/lib/ai/usage";
 import type { ProjectFile, BuildMessage, TurnUsage } from "./types";
 
 type BuildPhase = "idle" | "thinking" | "writing" | "applying" | "error";
@@ -310,17 +314,38 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let full = "";
-      set({ phase: "writing" });
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
         full += decoder.decode(value, { stream: true });
-        // Strip both the patch plan and the (possibly partial) usage marker from
-        // the live preview text.
-        set({ streamingText: extractUsage(stripFilePatchPlan(full)).text || "Working…" });
+        // The orchestrated stream has two parts: a live design plan (between
+        // PLAN_BEGIN/PLAN_DONE) shown as "Plan" feedback, then the build. A plain
+        // build (edit/repair/no design phase) has no markers and is all build.
+        const doneIdx = full.indexOf(PLAN_DONE_MARKER);
+        if (full.includes(PLAN_BEGIN_MARKER) && doneIdx < 0) {
+          const planText = extractUsage(
+            full.slice(full.indexOf(PLAN_BEGIN_MARKER) + PLAN_BEGIN_MARKER.length),
+          ).text;
+          set({ phase: "thinking", streamingText: planText.trim() || "Designing the app…" });
+        } else {
+          const buildText =
+            doneIdx >= 0 ? full.slice(doneIdx + PLAN_DONE_MARKER.length) : full;
+          set({
+            phase: "writing",
+            streamingText: extractUsage(stripFilePatchPlan(buildText)).text || "Working…",
+          });
+        }
       }
+      // Parse file patches only from the build portion (never the design plan).
+      const doneIdx = full.indexOf(PLAN_DONE_MARKER);
+      const buildPortion =
+        doneIdx >= 0
+          ? full.slice(doneIdx + PLAN_DONE_MARKER.length)
+          : full.includes(PLAN_BEGIN_MARKER)
+            ? ""
+            : full;
       // Pull the usage marker out before returning so the parser never sees it.
-      const { text, usage } = extractUsage(full);
+      const { text, usage } = extractUsage(buildPortion);
       if (usage) {
         usageAcc.inputTokens += usage.inputTokens;
         usageAcc.outputTokens += usage.outputTokens;
