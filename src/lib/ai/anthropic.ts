@@ -51,7 +51,7 @@ function toAnthropicContent(m: ChatMsg) {
  */
 export async function anthropicStream(
   messages: ChatMsg[],
-  opts: { model?: string; temperature?: number; maxTokens?: number } = {},
+  opts: { model?: string; temperature?: number; maxTokens?: number; signal?: AbortSignal } = {},
 ): Promise<Response | null> {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) return null;
@@ -68,6 +68,7 @@ export async function anthropicStream(
 
   return fetch(ANTHROPIC_URL, {
     method: "POST",
+    signal: opts.signal,
     headers: {
       "Content-Type": "application/json",
       "x-api-key": key,

@@ -50,7 +50,16 @@ export type AstraResult =
   | { ok: true; stream: ReadableStream<Uint8Array>; provider: AstraProvider }
   | { ok: false; status: number; detail: string };
 
-type StreamOpts = { temperature?: number; maxTokens?: number };
+type StreamOpts = {
+  temperature?: number;
+  maxTokens?: number;
+  /** Override the model id (e.g. a lighter model for the planning step). */
+  model?: string;
+  /** Fireworks reasoning effort: 'none' | 'low' | 'medium' | 'high' | 'max'. */
+  reasoningEffort?: string;
+  /** Abort signal — time-box a call so a slow provider can't hang the request. */
+  signal?: AbortSignal;
+};
 
 /** Attempt a single provider; normalize its SSE or report the upstream error. */
 async function tryProvider(

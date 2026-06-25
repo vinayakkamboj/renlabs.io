@@ -59,6 +59,20 @@ interface BuildRequest {
 // the build loop repairs it — but more headroom means that rarely fires.)
 const MAX_OUTPUT_TOKENS = 32_000;
 
+// Hard ceiling on the blocking design-phase call. If planning doesn't finish in
+// time we skip it and build directly, so the UI never gets stuck on "planning".
+const PLAN_TIMEOUT_MS = 22_000;
+
+/**
+ * Model used for the quick design-phase plan. Defaults to a lighter, faster
+ * model than the main builder so planning returns quickly; falls back to the
+ * main Fireworks model when no dedicated planning model is configured.
+ *   FIREWORKS_PLANNING_MODEL   e.g. accounts/fireworks/models/glm-4p6
+ */
+function planningModelId(): string | undefined {
+  return process.env.FIREWORKS_PLANNING_MODEL || undefined;
+}
+
 export async function POST(req: NextRequest) {
   if (!isAstraConfigured()) {
     return Response.json({ error: "builder_not_configured" }, { status: 503 });
@@ -149,8 +163,15 @@ export async function POST(req: NextRequest) {
   // commits to a COMPLETE plan (product, design system, pages, data, state,
   // home composition, signature moment, file manifest). The build engineer then
   // implements that locked plan in full — so the app is designed properly and
-  // shipped whole, not improvised in one pass. Best-effort: if planning fails
-  // for any reason, we fall back to building without a plan.
+  // shipped whole, not improvised in one pass.
+  //
+  // This is a BLOCKING call before streaming starts, so it must be FAST and
+  // never hang the build. We therefore:
+  //   • run it on a lighter/faster model (FIREWORKS_PLANNING_MODEL) at LOW
+  //     reasoning effort — a plan doesn't need deep chain-of-thought;
+  //   • cap output tokens tightly;
+  //   • hard-timeout the whole step (PLAN_TIMEOUT_MS). On timeout/error we just
+  //     build without a plan rather than leaving the UI stuck on "planning".
   let buildPlan: string | null = null;
   const shouldPlan =
     body.isFirstBuild === true && !isRepo && !body.repairIssues;
@@ -161,13 +182,18 @@ export async function POST(req: NextRequest) {
           { role: "system", content: buildArchitectPrompt() },
           { role: "user", content: `## Request\n${lastUser.content.trim()}` },
         ],
-        { maxTokens: 2600 },
+        {
+          maxTokens: 1800,
+          model: planningModelId(),
+          reasoningEffort: "low",
+          signal: AbortSignal.timeout(PLAN_TIMEOUT_MS),
+        },
       );
       if (planRes.ok && planRes.text.trim().length > 80) {
         buildPlan = planRes.text.trim();
       }
     } catch {
-      // Planning is best-effort — never block the build on it.
+      // Planning is best-effort — a timeout or any error just skips the plan.
     }
   }
 

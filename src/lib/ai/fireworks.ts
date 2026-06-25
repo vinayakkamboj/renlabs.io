@@ -55,8 +55,10 @@ export async function fireworksStream(
     model?: string;
     temperature?: number;
     maxTokens?: number;
-    /** GLM 5.2 reasoning effort: 'low' | 'medium' | 'high' | 'max' */
+    /** GLM 5.2 reasoning effort: 'none' | 'low' | 'medium' | 'high' | 'max' */
     reasoningEffort?: string;
+    /** Abort signal — used to time-box slow calls (e.g. the planning step). */
+    signal?: AbortSignal;
   } = {},
 ): Promise<Response | null> {
   const key = process.env.FIREWORKS_API_KEY;
@@ -64,6 +66,7 @@ export async function fireworksStream(
 
   return fetch(FIREWORKS_URL, {
     method: "POST",
+    signal: opts.signal,
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${key}`,
@@ -75,7 +78,7 @@ export async function fireworksStream(
       // temperature is not supported on GLM 5.2 reasoning models — only include
       // when a caller explicitly provides one.
       ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
-      // reasoning_effort controls GLM 5.2's thinking depth: low/medium/high/max
+      // reasoning_effort controls GLM 5.2's thinking depth: none/low/medium/high/max
       ...(opts.reasoningEffort ? { reasoning_effort: opts.reasoningEffort } : {}),
       messages: messages.map(toOpenAIMessage),
     }),
