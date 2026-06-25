@@ -17,6 +17,7 @@ import {
 import {
   ChevronDown,
   ChevronUp,
+  Github,
   Loader2,
   Package,
   ScanSearch,
@@ -24,6 +25,7 @@ import {
 } from "lucide-react";
 import { collectDependencies, detectEntry } from "@/lib/builder/deps";
 import { analyzeWebApp, type WebAppAnalysis } from "@/lib/builder/web-app";
+import { ReadmeViewer } from "@/components/workspace/readme-viewer";
 import type { ProjectFile } from "@/lib/builder/types";
 import { cn } from "@/lib/utils";
 
@@ -31,6 +33,9 @@ interface PreviewProps {
   projectFiles: ProjectFile[];
   viewerKey: number;
   projectKind?: "new" | "repository";
+  /** True when repo files were actually fetched from GitHub. False means the
+   *  session was missing/expired and the blank template was shown as a fallback. */
+  repoFilesLoaded?: boolean;
 }
 
 /**
@@ -298,11 +303,18 @@ function buildPreviewShell(): string {
  * Wrapper that decides how to preview a project. Generated apps are always our
  * client-side React template, so they run immediately. Imported repositories are
  * first analyzed — Astra reads the structure and dependencies — then either run
- * live (if it's a previewable web app) or show why a preview isn't available yet.
+ * live (if it's a previewable web app) or show the README (if one exists) with
+ * a note about why a live preview isn't available yet.
  */
-export function LivePreview({ projectFiles, viewerKey, projectKind }: PreviewProps) {
+export function LivePreview({ projectFiles, viewerKey, projectKind, repoFilesLoaded }: PreviewProps) {
   if (projectKind === "repository") {
-    return <RepoPreviewGate projectFiles={projectFiles} viewerKey={viewerKey} />;
+    return (
+      <RepoPreviewGate
+        projectFiles={projectFiles}
+        viewerKey={viewerKey}
+        repoFilesLoaded={repoFilesLoaded ?? false}
+      />
+    );
   }
   return <SandpackRunner projectFiles={projectFiles} viewerKey={viewerKey} />;
 }
@@ -317,18 +329,19 @@ const ANALYSIS_STEPS = [
 function RepoPreviewGate({
   projectFiles,
   viewerKey,
+  repoFilesLoaded,
 }: {
   projectFiles: ProjectFile[];
   viewerKey: number;
+  repoFilesLoaded: boolean;
 }) {
   const analysis = useMemo(() => analyzeWebApp(projectFiles), [projectFiles]);
   const [analyzing, setAnalyzing] = useState(true);
   const [step, setStep] = useState(0);
 
-  // A short, honest analysis pass so the user sees the project being understood
-  // before the preview resolves. Steps advance on a timer; the real detection is
-  // already computed above.
   useEffect(() => {
+    // If files weren't loaded from GitHub, don't bother with the analysis animation.
+    if (!repoFilesLoaded) { setAnalyzing(false); return; }
     setAnalyzing(true);
     setStep(0);
     const stepTimer = setInterval(() => {
@@ -342,7 +355,12 @@ function RepoPreviewGate({
       clearInterval(stepTimer);
       clearTimeout(doneTimer);
     };
-  }, [viewerKey, projectFiles]);
+  }, [viewerKey, projectFiles, repoFilesLoaded]);
+
+  // GitHub session was missing or expired — files couldn't be loaded.
+  if (!repoFilesLoaded) {
+    return <RepoLoadFailed />;
+  }
 
   if (analyzing) {
     return (
@@ -383,11 +401,43 @@ function RepoPreviewGate({
     );
   }
 
-  if (analysis.status !== "previewable") {
-    return <UnsupportedNotice analysis={analysis} />;
+  // Live preview available — run it.
+  if (analysis.status === "previewable") {
+    return <SandpackRunner projectFiles={projectFiles} viewerKey={viewerKey} />;
   }
 
-  return <SandpackRunner projectFiles={projectFiles} viewerKey={viewerKey} />;
+  // Preview not available (fullstack framework, non-web, etc.).
+  // Show the README if the repo has one — it's the most useful thing we have.
+  const readme = findReadme(projectFiles);
+  if (readme) {
+    const reason =
+      analysis.status === "fullstack"
+        ? `${analysis.framework} requires a server — live preview not available yet`
+        : "Live preview not available for this project type";
+    return (
+      <ReadmeViewer
+        content={readme.content}
+        previewUnavailableReason={reason}
+      />
+    );
+  }
+
+  return <UnsupportedNotice analysis={analysis} />;
+}
+
+/** Find the most likely README file in the project files. */
+function findReadme(files: ProjectFile[]): ProjectFile | undefined {
+  // Prefer README.md at the root, then any README variant.
+  const priority = ["README.md", "readme.md", "README.MD", "Readme.md"];
+  for (const name of priority) {
+    const found = files.find((f) => f.path === name);
+    if (found) return found;
+  }
+  // Any README at root or one level deep
+  return files.find((f) =>
+    /^(README|readme|Readme)(\.[a-z]+)?$/i.test(f.path) ||
+    /^[^/]+\/(README|readme|Readme)(\.[a-z]+)?$/i.test(f.path),
+  );
 }
 
 /**
@@ -431,6 +481,35 @@ function StaticRunner({
     >
       <PreviewContent packageDeps={{}} />
     </SandpackProvider>
+  );
+}
+
+/**
+ * Shown when GitHub session is missing or expired and files couldn't be loaded.
+ * Guides the user to reconnect GitHub rather than showing a confusing blank page.
+ */
+function RepoLoadFailed() {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-4 bg-carbon px-8 text-center">
+      <div className="flex size-12 items-center justify-center rounded-2xl border border-carbon-line bg-carbon-raised">
+        <Github className="size-5 text-dusk-faint" />
+      </div>
+      <div className="max-w-[44ch]">
+        <p className="text-[15px] font-medium text-dusk">
+          Could not load repository files
+        </p>
+        <p className="mt-2 text-[13px] leading-relaxed text-dusk-muted">
+          Your GitHub session may have expired. Reconnect GitHub in Integrations
+          and reload to view and edit this repository.
+        </p>
+      </div>
+      <a
+        href="/dashboard/integrations"
+        className="rounded-lg border border-carbon-line bg-carbon-raised px-4 py-2 text-[12.5px] font-medium text-dusk transition-colors hover:border-brass/40 hover:text-brass"
+      >
+        Go to Integrations
+      </a>
+    </div>
   );
 }
 

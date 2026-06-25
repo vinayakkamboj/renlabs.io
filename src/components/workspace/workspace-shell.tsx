@@ -48,6 +48,8 @@ interface WorkspaceShellProps {
   repoDefaultBranch: string | null;
   initialFiles: ProjectFile[];
   hadFirstBuild: boolean;
+  /** True only when repo files were actually fetched from GitHub (not the fallback template). */
+  repoFilesLoaded?: boolean;
   supabaseConnected: boolean;
   supabaseUrl: string | null;
 }
@@ -60,6 +62,7 @@ export function WorkspaceShell({
   repoDefaultBranch,
   initialFiles,
   hadFirstBuild,
+  repoFilesLoaded = false,
   supabaseConnected,
   supabaseUrl,
 }: WorkspaceShellProps) {
@@ -257,6 +260,7 @@ export function WorkspaceShell({
                         projectFiles={projectFiles}
                         viewerKey={viewerKey}
                         projectKind={projectKind}
+                        repoFilesLoaded={repoFilesLoaded}
                       />
                     </div>
                   </div>
