@@ -64,6 +64,8 @@ interface WorkspaceState {
    *  server-side) and refresh the preview so changes show immediately. */
   replaceFiles: (files: ProjectFile[]) => void;
   refreshViewer: () => void;
+  /** Update the live credit balance (e.g. after an autonomous agent run). */
+  setCreditsBalance: (balance: number) => void;
   sendMessage: (text: string, images?: string[]) => Promise<void>;
   /** Abort an in-flight build. Stops the stream and leaves files untouched. */
   stopBuild: () => void;
@@ -200,6 +202,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   setActiveFile: (path) => set({ activeFile: path }),
   setModelTier: (tier) => set({ modelTier: tier }),
+  setCreditsBalance: (balance) => set({ creditsBalance: balance }),
 
   updateFileContent: (path, content) => {
     const files = get().projectFiles.map((f) =>

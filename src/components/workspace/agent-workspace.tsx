@@ -127,11 +127,18 @@ export function AgentWorkspace({ projectId, projectName }: Props) {
         filesChanged?: number;
         followUpTasks?: number;
         plan?: string;
+        creditsSpent?: number;
+        creditsBalance?: number;
       };
       if (data.ok) {
         const bits: string[] = [];
         if (data.filesChanged) bits.push(`${data.filesChanged} file${data.filesChanged > 1 ? "s" : ""}`);
         if (data.followUpTasks) bits.push(`${data.followUpTasks} follow-up${data.followUpTasks > 1 ? "s" : ""}`);
+        if (data.creditsSpent) bits.push(`−${data.creditsSpent} credits`);
+        // Keep the workspace credit readout in sync with agent spend.
+        if (typeof data.creditsBalance === "number") {
+          useWorkspaceStore.getState().setCreditsBalance(data.creditsBalance);
+        }
         pushLog({
           kind: "run",
           agent: agentName,

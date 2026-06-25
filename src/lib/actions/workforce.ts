@@ -11,6 +11,7 @@
 
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import { deployAgent } from "./agents";
+import { DEFAULT_AGENT_BUDGET_CREDITS } from "@/lib/credits/config";
 import { ROLE_PRESETS, type Agent, type AgentRole } from "@/lib/data/agents";
 import type { ProjectFile } from "@/lib/builder/types";
 
@@ -171,6 +172,8 @@ export async function deployStarterTeam(
       name: ROLE_PRESETS[role].label,
       role,
       schedule: "manual",
+      // Seed each agent with a credit budget drawn from the user's Ren credits.
+      budgetCents: DEFAULT_AGENT_BUDGET_CREDITS,
     });
     if (res.ok) created++;
   }

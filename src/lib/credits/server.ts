@@ -14,6 +14,7 @@
  */
 
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/server";
 import { CREDITS_PER_BUILD, SIGNUP_BONUS_CREDITS, FREE_GENERATIONS } from "./config";
 import type { ModelTierId } from "@/lib/builder/model-tiers";
@@ -128,6 +129,48 @@ export async function deductBuildCredits(
     return { ok: true, balance: result.balance!, deducted: result.deducted! };
   } catch {
     // Any unexpected DB error → skip in dev, but log
+    return { ok: true, skipped: true };
+  }
+}
+
+/**
+ * Atomically charge an autonomous agent run against the OWNER's credit balance.
+ *
+ * Runs from the agent runner, which has no user session — so it uses the admin
+ * (service-role) client and the explicit owner id. Same RPC and semantics as
+ * deductBuildCredits, so it shares the same row-lock / no-double-spend guarantee.
+ * Returns the standard DeductResult; { error: "insufficient_credits" } when the
+ * owner is out of credits, or { skipped: true } when the table/RPC is absent.
+ */
+export async function deductAgentRunCredits(
+  userId: string,
+  projectId: string,
+  cost: number,
+): Promise<DeductResult> {
+  if (!isSupabaseConfigured()) return { ok: true, skipped: true };
+
+  const supabase = createAdminClient();
+  try {
+    const { data, error } = await supabase.rpc("deduct_build_credits", {
+      p_user_id: userId,
+      p_amount: cost,
+      p_tier: "v1",
+      p_project_id: projectId,
+    });
+
+    if (error) {
+      if (error.code === "PGRST202" || error.message?.includes("does not exist")) {
+        return { ok: true, skipped: true };
+      }
+      return { ok: false, error: error.message };
+    }
+
+    const result = data as { ok: boolean; error?: string; balance?: number; deducted?: number };
+    if (!result.ok) {
+      return { ok: false, error: result.error ?? "insufficient_credits" };
+    }
+    return { ok: true, balance: result.balance!, deducted: result.deducted! };
+  } catch {
     return { ok: true, skipped: true };
   }
 }

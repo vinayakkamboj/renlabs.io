@@ -10,6 +10,8 @@ import {
 } from "@/lib/builder/file-patches";
 import { buildEditPrompt, buildRepairPrompt } from "@/lib/builder/prompts";
 import { logActivity, setTaskStatus } from "./agents";
+import { deductAgentRunCredits } from "@/lib/credits/server";
+import { CREDITS_PER_AGENT_RUN } from "@/lib/credits/config";
 import { ROLE_PRESETS } from "@/lib/data/agents";
 import { decryptSecret } from "@/lib/crypto/secrets";
 import type { Agent, AgentTask, TaskStatus, TaskPriority } from "@/lib/data/agents";
@@ -23,6 +25,10 @@ export interface RunAgentTaskResult {
   reportId?: string;
   /** One-line summary of what the agent did this run (the report title). */
   plan?: string;
+  /** Ren credits this run charged to the owner's balance. */
+  creditsSpent?: number;
+  /** Owner's credit balance after this run (when known). */
+  creditsBalance?: number;
 }
 
 interface AgentContext {
@@ -451,6 +457,7 @@ async function drainStream(stream: ReadableStream<Uint8Array>): Promise<string> 
 export async function runAgentTask(
   agentId: string,
   taskId?: string,
+  requesterId?: string,
 ): Promise<RunAgentTaskResult> {
   try {
     // Load context
@@ -459,10 +466,41 @@ export async function runAgentTask(
       return { ok: false, error: "Agent or project not found" };
     }
 
+    // Ownership: when a requester is known (a real signed-in user triggered this),
+    // only the agent's owner may run it — runs spend the owner's credits.
+    if (requesterId && requesterId !== ctx.userId) {
+      return { ok: false, error: "You don't have access to this agent." };
+    }
+
     // If no task and not code-generating, nothing to do
     if (!ctx.task && !["developer", "qa", "design", "ops"].includes(ctx.agent.role)) {
       return { ok: false, error: "No task queued for this agent" };
     }
+
+    // ── Credit budget ────────────────────────────────────────────────────────
+    // Each run is charged to the owner's Ren credit balance. A positive per-agent
+    // budget caps how much of that balance this one agent may spend.
+    const cost = CREDITS_PER_AGENT_RUN;
+    if (ctx.agent.budgetCents > 0 && ctx.agent.spentCents + cost > ctx.agent.budgetCents) {
+      return {
+        ok: false,
+        error:
+          "This agent has reached its credit budget. Raise its budget to keep it running.",
+      };
+    }
+    const charge = await deductAgentRunCredits(ctx.userId, ctx.project.id, cost);
+    if (!charge.ok) {
+      if (charge.error === "insufficient_credits") {
+        return {
+          ok: false,
+          error: "Out of Ren credits — top up in Billing to keep your agents running.",
+        };
+      }
+      return { ok: false, error: "Couldn't reserve credits for this run." };
+    }
+    // "skipped" means the credits table/RPC isn't set up (dev) — run for free then.
+    const creditsSpent = "skipped" in charge ? 0 : cost;
+    const creditsBalance = "skipped" in charge ? undefined : charge.balance;
 
     // Execute
     const { plan, changedFiles, reportContent } = await executeAgent(ctx);
@@ -500,11 +538,12 @@ export async function runAgentTask(
     // Reflect and queue follow-ups
     const followUpIds = await reflectAndQueueTasks(ctx, changedFiles);
 
-    // Update agent lastRunAt and memory
+    // Update agent lastRunAt, memory, and the running credit spend total.
     await ctx.supabase
       .from("agents")
       .update({
         last_run_at: new Date().toISOString(),
+        spent_cents: ctx.agent.spentCents + creditsSpent,
         memory: {
           lastTask: ctx.task?.id,
           lastChangedFiles: changedFiles.map((f) => f.path),
@@ -527,6 +566,8 @@ export async function runAgentTask(
       followUpTasks: followUpIds.length,
       reportId,
       plan,
+      creditsSpent,
+      creditsBalance,
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

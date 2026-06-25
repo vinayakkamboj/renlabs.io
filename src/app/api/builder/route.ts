@@ -212,9 +212,19 @@ export async function POST(req: NextRequest) {
   //      divider. Planning is time-boxed; if it stalls or errors we build anyway.
   // reasoning_effort=low keeps GLM 5.2 emitting fast instead of reasoning
   // silently (its reasoning tokens are not surfaced to the client).
+  // Whether the project already has a real app (pages/components beyond the
+  // blank template). If so we ALWAYS edit directly — the design phase is only for
+  // a genuinely fresh project's first build, so an existing project (e.g. one
+  // whose first build didn't persist server-side) can still be coded on anytime.
+  const hasExistingApp = files.some(
+    (f) =>
+      f.path.startsWith("src/pages/") || f.path.startsWith("src/components/"),
+  );
+
   const designPhase =
     process.env.ASTRA_DESIGN_PHASE !== "0" &&
     body.isFirstBuild === true &&
+    !hasExistingApp &&
     !isRepo &&
     !body.repairIssues &&
     Boolean(lastUser?.content?.trim());

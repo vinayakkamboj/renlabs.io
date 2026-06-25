@@ -30,6 +30,21 @@ export const CREDITS_PER_BUILD: Record<ModelTierId, number> = {
 };
 
 // ---------------------------------------------------------------------------
+// Autonomous agents
+// ---------------------------------------------------------------------------
+//
+// Each autonomous agent run makes several model calls (work + repair + reflect),
+// so it costs roughly a build. Charged to the user's Ren credit balance — agents
+// spend the same credits the user buys, never free compute.
+export const CREDITS_PER_AGENT_RUN = 40;
+
+// Default per-agent credit budget set when a team is deployed. A budget of 0
+// means "no per-agent cap" (still limited by the user's overall balance); a
+// positive budget caps how many of the user's credits that one agent may spend.
+// 1000 credits ≈ 25 runs at the rate above.
+export const DEFAULT_AGENT_BUDGET_CREDITS = 1000;
+
+// ---------------------------------------------------------------------------
 // Free tier — new users get one free generation (not free credits)
 // ---------------------------------------------------------------------------
 export const FREE_GENERATIONS = 1;
