@@ -67,9 +67,10 @@ interface BuildRequest {
 // the build loop repairs it — but more headroom means that rarely fires.)
 const MAX_OUTPUT_TOKENS = 32_000;
 
-// Hard ceiling on the blocking design-phase call. If planning doesn't finish in
-// time we skip it and build directly, so the UI never gets stuck on "planning".
-const PLAN_TIMEOUT_MS = 22_000;
+// Hard ceiling on the design-phase plan. Kept tight so planning leaves the build
+// phase as much of the function's time budget as possible (a long plan on a
+// timeout-limited host is what truncates big multi-file builds mid-stream).
+const PLAN_TIMEOUT_MS = 15_000;
 
 /**
  * Model used for the quick design-phase plan. Defaults to a lighter, faster
@@ -261,7 +262,7 @@ export async function POST(req: NextRequest) {
             { role: "user", content: `## Request\n${request}` },
           ],
           {
-            maxTokens: 1800,
+            maxTokens: 1200,
             model: planningModelId(),
             reasoningEffort: "low",
             signal: AbortSignal.timeout(PLAN_TIMEOUT_MS),

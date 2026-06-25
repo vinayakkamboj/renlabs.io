@@ -317,27 +317,37 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let full = "";
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        full += decoder.decode(value, { stream: true });
-        // The orchestrated stream has two parts: a live design plan (between
-        // PLAN_BEGIN/PLAN_DONE) shown as "Plan" feedback, then the build. A plain
-        // build (edit/repair/no design phase) has no markers and is all build.
-        const doneIdx = full.indexOf(PLAN_DONE_MARKER);
-        if (full.includes(PLAN_BEGIN_MARKER) && doneIdx < 0) {
-          const planText = extractUsage(
-            full.slice(full.indexOf(PLAN_BEGIN_MARKER) + PLAN_BEGIN_MARKER.length),
-          ).text;
-          set({ phase: "thinking", streamingText: planText.trim() || "Designing the app…" });
-        } else {
-          const buildText =
-            doneIdx >= 0 ? full.slice(doneIdx + PLAN_DONE_MARKER.length) : full;
-          set({
-            phase: "writing",
-            streamingText: extractUsage(stripFilePatchPlan(buildText)).text || "Working…",
-          });
+      // If the stream drops mid-build (a Vercel timeout, a flaky connection),
+      // we DON'T discard what already arrived — we salvage every complete file
+      // from the partial response. Only a user-initiated Stop (abort) aborts hard.
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          full += decoder.decode(value, { stream: true });
+          // The orchestrated stream has two parts: a live design plan (between
+          // PLAN_BEGIN/PLAN_DONE) shown as "Plan" feedback, then the build. A plain
+          // build (edit/repair/no design phase) has no markers and is all build.
+          const doneIdx = full.indexOf(PLAN_DONE_MARKER);
+          if (full.includes(PLAN_BEGIN_MARKER) && doneIdx < 0) {
+            const planText = extractUsage(
+              full.slice(full.indexOf(PLAN_BEGIN_MARKER) + PLAN_BEGIN_MARKER.length),
+            ).text;
+            set({ phase: "thinking", streamingText: planText.trim() || "Designing the app…" });
+          } else {
+            const buildText =
+              doneIdx >= 0 ? full.slice(doneIdx + PLAN_DONE_MARKER.length) : full;
+            set({
+              phase: "writing",
+              streamingText: extractUsage(stripFilePatchPlan(buildText)).text || "Working…",
+            });
+          }
         }
+      } catch (streamErr) {
+        // User pressed Stop — propagate so the build unwinds cleanly.
+        if (isAbortError(streamErr)) throw streamErr;
+        // Otherwise the connection dropped: keep `full` as-is and fall through to
+        // parse whatever complete files we managed to receive.
       }
       // Parse file patches only from the build portion (never the design plan).
       const doneIdx = full.indexOf(PLAN_DONE_MARKER);
@@ -360,22 +370,36 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       let full = await runBuild();
       let plan = parseFilePatchPlan(full);
 
-      // One repair attempt if the candidate is fatally broken (e.g. a file was
-      // truncated mid-stream, or an import dangles). Keep whichever attempt is
-      // cleaner — the repair wins if it has strictly fewer fatal issues.
+      // Finish-the-job pass. A first build that came back truncated (connection
+      // dropped, or token limit) or with dangling imports is INCOMPLETE, not
+      // broken. Rather than regenerate the whole app from scratch — which just
+      // truncates again on a large site — we apply what we got and CONTINUE
+      // building on top of it (edit mode), the way a real coding agent finishes
+      // its work. A first build that never wrote src/App.tsx counts as incomplete
+      // even when nothing dangles (it was cut off before wiring the app up).
       if (plan) {
-        const issues = detectFatalIssues(plan, get().projectFiles, get().isFirstBuild);
-        if (issues.length) {
-          set({ phase: "thinking", streamingText: "Reviewing and repairing…" });
-          full = await runBuild(describeFatalIssues(issues));
+        const wasFirstBuild = get().isFirstBuild;
+        const issues = detectFatalIssues(plan, get().projectFiles, wasFirstBuild);
+        const missingApp =
+          wasFirstBuild && !plan.changes.some((c) => c.path === "src/App.tsx");
+        if (issues.length || missingApp) {
+          // Apply the partial result so the continuation builds ON it.
+          const partial = applyPatchPlan(get().projectFiles, plan);
+          set({
+            projectFiles: partial,
+            isFirstBuild: false,
+            phase: "thinking",
+            streamingText: "Finishing the build…",
+          });
+          const note = missingApp
+            ? "Your previous response was cut off before the app was finished. Continue: create every remaining file — especially src/App.tsx wiring routes for all pages — and any page/component referenced but not yet created. Keep all existing files intact."
+            : describeFatalIssues(issues);
+          full = await runBuild(note);
           const retryPlan = parseFilePatchPlan(full);
           if (retryPlan) {
-            const retryIssues = detectFatalIssues(
-              retryPlan,
-              get().projectFiles,
-              get().isFirstBuild,
-            );
-            if (retryIssues.length < issues.length) plan = retryPlan;
+            const retryIssues = detectFatalIssues(retryPlan, get().projectFiles, false);
+            // Take the continuation when it finishes the app or leaves it cleaner.
+            if (missingApp || retryIssues.length <= issues.length) plan = retryPlan;
           }
         }
       }
