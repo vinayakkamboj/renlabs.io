@@ -377,31 +377,29 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       // building on top of it (edit mode), the way a real coding agent finishes
       // its work. A first build that never wrote src/App.tsx counts as incomplete
       // even when nothing dangles (it was cut off before wiring the app up).
-      if (plan) {
-        const wasFirstBuild = get().isFirstBuild;
-        const issues = detectFatalIssues(plan, get().projectFiles, wasFirstBuild);
+      const MAX_FINISH_PASSES = 2;
+      for (let pass = 0; plan && pass < MAX_FINISH_PASSES; pass++) {
+        const firstB = get().isFirstBuild;
+        const issues = detectFatalIssues(plan, get().projectFiles, firstB);
         const missingApp =
-          wasFirstBuild && !plan.changes.some((c) => c.path === "src/App.tsx");
-        if (issues.length || missingApp) {
-          // Apply the partial result so the continuation builds ON it.
-          const partial = applyPatchPlan(get().projectFiles, plan);
-          set({
-            projectFiles: partial,
-            isFirstBuild: false,
-            phase: "thinking",
-            streamingText: "Finishing the build…",
-          });
-          const note = missingApp
-            ? "Your previous response was cut off before the app was finished. Continue: create every remaining file — especially src/App.tsx wiring routes for all pages — and any page/component referenced but not yet created. Keep all existing files intact."
-            : describeFatalIssues(issues);
-          full = await runBuild(note);
-          const retryPlan = parseFilePatchPlan(full);
-          if (retryPlan) {
-            const retryIssues = detectFatalIssues(retryPlan, get().projectFiles, false);
-            // Take the continuation when it finishes the app or leaves it cleaner.
-            if (missingApp || retryIssues.length <= issues.length) plan = retryPlan;
-          }
-        }
+          firstB && !plan.changes.some((c) => c.path === "src/App.tsx");
+        if (!issues.length && !missingApp) break; // complete — apply happens below
+
+        // Commit what we have so the next pass builds ON it (edit mode).
+        set({
+          projectFiles: applyPatchPlan(get().projectFiles, plan),
+          isFirstBuild: false,
+          phase: "thinking",
+          streamingText: "Finishing the build…",
+        });
+        const note = missingApp
+          ? "Your previous response was cut off before the app was finished. Continue: create every remaining file — especially src/App.tsx wiring routes for all pages — and any page/component referenced but not yet created. Keep all existing files intact; output only what is still missing or broken."
+          : describeFatalIssues(issues);
+        const nextFull = await runBuild(note);
+        const nextPlan = parseFilePatchPlan(nextFull);
+        if (!nextPlan) break; // continuation produced nothing usable — keep what we applied
+        full = nextFull;
+        plan = nextPlan;
       }
 
       const prose = stripFilePatchPlan(full);
