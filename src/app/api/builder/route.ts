@@ -25,13 +25,14 @@ import {
   buildEditPrompt,
   buildRepairPrompt,
   buildRepoImportPrompt,
+  buildArchitectPrompt,
 } from "@/lib/builder/prompts";
 import { detectRepoStack } from "@/lib/builder/repo-stack";
 import {
   buildRepositoryIntelligence,
   formatIntelligenceForPrompt,
 } from "@/lib/ai/repository-intelligence";
-import { isAstraConfigured, streamAstraText } from "@/lib/ai/astra";
+import { isAstraConfigured, streamAstraText, completeAstraText } from "@/lib/ai/astra";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import { deductBuildCredits } from "@/lib/credits/server";
 import { CREDITS_PER_BUILD } from "@/lib/credits/config";
@@ -142,12 +143,39 @@ export async function POST(req: NextRequest) {
     return `${stackPrompt}\n\n${formatIntelligenceForPrompt(intel)}`;
   };
 
+  // ── Design phase (orchestration) ──────────────────────────────────────────
+  // On a fresh build of a new app, Astra first acts as a product architect and
+  // commits to a COMPLETE plan (product, design system, pages, data, state,
+  // home composition, signature moment, file manifest). The build engineer then
+  // implements that locked plan in full — so the app is designed properly and
+  // shipped whole, not improvised in one pass. Best-effort: if planning fails
+  // for any reason, we fall back to building without a plan.
+  let buildPlan: string | null = null;
+  const shouldPlan =
+    body.isFirstBuild === true && !isRepo && !body.repairIssues;
+  if (shouldPlan && lastUser?.content?.trim()) {
+    try {
+      const planRes = await completeAstraText(
+        [
+          { role: "system", content: buildArchitectPrompt() },
+          { role: "user", content: `## Request\n${lastUser.content.trim()}` },
+        ],
+        { maxTokens: 2600 },
+      );
+      if (planRes.ok && planRes.text.trim().length > 80) {
+        buildPlan = planRes.text.trim();
+      }
+    } catch {
+      // Planning is best-effort — never block the build on it.
+    }
+  }
+
   const system = body.repairIssues
     ? buildRepairPrompt(body.repairIssues)
     : isRepo
       ? repoSystem()
       : body.isFirstBuild
-        ? buildNewProjectPrompt()
+        ? buildNewProjectPrompt(buildPlan ?? undefined)
         : buildEditPrompt();
 
   const images = Array.isArray(body.images) ? body.images.slice(0, 4) : [];
@@ -183,6 +211,8 @@ export async function POST(req: NextRequest) {
     "Cache-Control": "no-store",
     "x-ren-tier": tier.id,
     "x-ren-credits-deducted": String(creditsDeducted),
+    // Signals the orchestrator ran a full design phase before this build.
+    "x-ren-planned": buildPlan ? "1" : "0",
   };
   if (creditsBalance !== null) {
     headers["x-ren-credits-balance"] = String(creditsBalance);
