@@ -6,7 +6,7 @@
  * from a client component.
  *
  *   FIREWORKS_API_KEY    secret, server-only
- *   FIREWORKS_MODEL      model slug (default: accounts/fireworks/models/glm-5p2-fp8)
+ *   FIREWORKS_MODEL      model slug (default: accounts/fireworks/models/glm-5p2)
  */
 
 import { formatUsageMarker } from "./usage";
@@ -25,11 +25,12 @@ export function isFireworksConfigured(): boolean {
 }
 
 /**
- * The Fireworks model slug. Defaults to GLM 5.2 FP8 (full precision, best quality).
- * Use accounts/fireworks/models/glm-5p2 for the quantized (slightly cheaper) variant.
+ * The Fireworks model slug. Defaults to GLM 5.2 on serverless pay-per-token.
+ * This is the slug confirmed available serverless — the -fp8 variant requires a
+ * dedicated deployment and returns "model not found / not deployed" on serverless.
  */
 export function fireworksModelId(): string {
-  return process.env.FIREWORKS_MODEL ?? "accounts/fireworks/models/glm-5p2-fp8";
+  return process.env.FIREWORKS_MODEL ?? "accounts/fireworks/models/glm-5p2";
 }
 
 /** Build an OpenAI-style message (multimodal when images are attached). */
