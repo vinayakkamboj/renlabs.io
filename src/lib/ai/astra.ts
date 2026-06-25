@@ -1,20 +1,19 @@
 /**
  * Astra inference — provider-agnostic entry point.
  *
- * Astra is served by OpenRouter when OPENROUTER_API_KEY is set; otherwise it
- * falls back to Claude (ANTHROPIC_API_KEY). If the primary provider errors but a
- * second provider is configured, we automatically fail over to it so a build is
- * never lost to one provider's hiccup. Both paths are normalized to a plain
- * UTF-8 text stream so callers never see provider specifics. NEVER import this
- * from a client component.
+ * Fireworks AI is the primary provider (direct infrastructure, SLA-backed).
+ * Claude (Anthropic) is the fallback for when Fireworks is unreachable or
+ * returns an error. Both paths are normalized to a plain UTF-8 text stream
+ * so callers never see provider specifics. NEVER import this from a client
+ * component.
  */
 
 import {
-  isOpenRouterConfigured,
-  openRouterStream,
-  sseToText,
+  isFireworksConfigured,
+  fireworksStream,
+  fireworksSseToText,
   type ChatMsg,
-} from "./openrouter";
+} from "./fireworks";
 import {
   isAnthropicConfigured,
   anthropicStream,
@@ -25,16 +24,16 @@ import { extractUsage, type TokenUsage } from "./usage";
 export type { ChatMsg };
 export type { TokenUsage };
 
-export type AstraProvider = "openrouter" | "anthropic";
+export type AstraProvider = "fireworks" | "anthropic";
 
 /** True if any inference provider is configured. */
 export function isAstraConfigured(): boolean {
-  return isOpenRouterConfigured() || isAnthropicConfigured();
+  return isFireworksConfigured() || isAnthropicConfigured();
 }
 
-/** Which provider will serve requests right now (OpenRouter wins if both set). */
+/** Which provider will serve requests right now (Fireworks wins if both set). */
 export function activeProvider(): AstraProvider | null {
-  if (isOpenRouterConfigured()) return "openrouter";
+  if (isFireworksConfigured()) return "fireworks";
   if (isAnthropicConfigured()) return "anthropic";
   return null;
 }
@@ -42,7 +41,7 @@ export function activeProvider(): AstraProvider | null {
 /** Configured providers in priority order (primary first). */
 function providerChain(): AstraProvider[] {
   const chain: AstraProvider[] = [];
-  if (isOpenRouterConfigured()) chain.push("openrouter");
+  if (isFireworksConfigured()) chain.push("fireworks");
   if (isAnthropicConfigured()) chain.push("anthropic");
   return chain;
 }
@@ -60,17 +59,13 @@ async function tryProvider(
   opts: StreamOpts,
 ): Promise<AstraResult> {
   const upstream =
-    provider === "openrouter"
-      ? await openRouterStream(messages, opts)
+    provider === "fireworks"
+      ? await fireworksStream(messages, opts)
       : await anthropicStream(messages, opts);
 
   if (!upstream || !upstream.ok || !upstream.body) {
-    // No Response at all means the fetch threw (network/DNS) — report 502.
     if (!upstream) return { ok: false, status: 502, detail: "provider_unreachable" };
     const raw = await upstream.text().catch(() => "");
-    // Both providers return JSON like { error: { message } } on failure; pull
-    // out the human-readable message and pass the real status through so the
-    // client can explain whether it's a bad key, model, or rate limit.
     let detail = raw.slice(0, 300);
     try {
       const j = JSON.parse(raw) as { error?: { message?: string } | string };
@@ -83,17 +78,16 @@ async function tryProvider(
   }
 
   const stream =
-    provider === "openrouter"
-      ? sseToText(upstream.body)
+    provider === "fireworks"
+      ? fireworksSseToText(upstream.body)
       : anthropicSseToText(upstream.body);
 
   return { ok: true, stream, provider };
 }
 
 /**
- * Stream Astra as plain text. Tries the primary provider first; if it errors and
- * another provider is configured, fails over to it before giving up. Returns the
- * first provider's error detail when every provider fails.
+ * Stream Astra as plain text. Tries Fireworks first; if it errors and Claude
+ * is configured, fails over before giving up.
  */
 export async function streamAstraText(
   messages: ChatMsg[],
@@ -107,15 +101,14 @@ export async function streamAstraText(
     const result = await tryProvider(provider, messages, opts);
     if (result.ok) return result;
     if (!firstError) firstError = result;
-    // Otherwise loop on to the next configured provider (failover).
   }
   return firstError ?? { ok: false, status: 502, detail: "all_providers_failed" };
 }
 
 /**
- * Run Astra to completion and return the full text (non-streaming callers like
- * the autonomous agent runner, which need the whole response before parsing the
- * file-patch block). Drains the normalized text stream into a single string.
+ * Run Astra to completion and return the full text. Used by non-streaming
+ * callers like the autonomous agent runner that need the whole response before
+ * parsing the file-patch block.
  */
 export async function completeAstraText(
   messages: ChatMsg[],
@@ -144,8 +137,6 @@ export async function completeAstraText(
       detail: e instanceof Error ? e.message : "stream_read_failed",
     };
   }
-  // Strip the trailing usage marker so callers (e.g. the agent runner's file
-  // parser) never see it; surface the parsed usage separately.
   const { text, usage } = extractUsage(raw);
   return { ok: true, text, usage };
 }

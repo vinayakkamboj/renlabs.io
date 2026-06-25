@@ -8,7 +8,7 @@
  *   ANTHROPIC_MODEL     the Claude model id (default: a current Claude model)
  */
 
-import type { ChatMsg } from "./openrouter";
+import type { ChatMsg } from "./fireworks";
 import { formatUsageMarker } from "./usage";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
