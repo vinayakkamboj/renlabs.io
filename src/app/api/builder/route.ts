@@ -165,16 +165,20 @@ export async function POST(req: NextRequest) {
   // implements that locked plan in full — so the app is designed properly and
   // shipped whole, not improvised in one pass.
   //
-  // This is a BLOCKING call before streaming starts, so it must be FAST and
-  // never hang the build. We therefore:
-  //   • run it on a lighter/faster model (FIREWORKS_PLANNING_MODEL) at LOW
-  //     reasoning effort — a plan doesn't need deep chain-of-thought;
-  //   • cap output tokens tightly;
-  //   • hard-timeout the whole step (PLAN_TIMEOUT_MS). On timeout/error we just
-  //     build without a plan rather than leaving the UI stuck on "planning".
+  // ── Design phase (orchestration) — OPT-IN ─────────────────────────────────
+  // When ASTRA_DESIGN_PHASE=1, a fresh build first runs a quick architect pass
+  // that commits to a COMPLETE plan, which the build engineer then implements.
+  // It is OFF by default because it is a BLOCKING call before any streaming —
+  // with a slow model it leaves the UI sitting on the "Plan" stage. When on, we
+  // keep it fast and safe: lighter model (FIREWORKS_PLANNING_MODEL), LOW
+  // reasoning, tight token cap, and a hard timeout (PLAN_TIMEOUT_MS) that falls
+  // back to building without a plan rather than ever hanging.
   let buildPlan: string | null = null;
   const shouldPlan =
-    body.isFirstBuild === true && !isRepo && !body.repairIssues;
+    process.env.ASTRA_DESIGN_PHASE === "1" &&
+    body.isFirstBuild === true &&
+    !isRepo &&
+    !body.repairIssues;
   if (shouldPlan && lastUser?.content?.trim()) {
     try {
       const planRes = await completeAstraText(
@@ -218,12 +222,15 @@ export async function POST(req: NextRequest) {
   });
 
   // ── 4. Stream from Astra (Fireworks primary, Claude fallback) ─────────────
+  // reasoning_effort=low so GLM 5.2 starts emitting file content quickly instead
+  // of spending minutes on silent chain-of-thought (its reasoning tokens are not
+  // surfaced to the client), which reads as the build being "stuck".
   const result = await streamAstraText(
     [
       { role: "system", content: system },
       ...apiMessages.slice(-16),
     ],
-    { maxTokens: MAX_OUTPUT_TOKENS },
+    { maxTokens: MAX_OUTPUT_TOKENS, reasoningEffort: "low" },
   );
 
   if (!result.ok) {
