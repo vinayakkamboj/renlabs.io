@@ -1,9 +1,9 @@
 /**
  * POST /api/astra — the Astra chatbot endpoint.
  *
- * Authenticated, rate-limited conversational chat served by Astra via
- * OpenRouter. Each message counts against a per-user daily limit enforced
- * server-side (the client can't bypass it).
+ * Authenticated, rate-limited conversational chat served by Astra (Fireworks
+ * primary, Claude fallback). Each message counts against a per-user daily limit
+ * enforced server-side (the client can't bypass it).
  */
 
 export const runtime = "nodejs";

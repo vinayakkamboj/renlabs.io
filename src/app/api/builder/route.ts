@@ -1,8 +1,9 @@
 /**
  * POST /api/builder
  *
- * Core build endpoint. Validates credits, streams the Anthropic response, and
- * deducts credits atomically on success. All credit operations are server-side
+ * Core build endpoint. Validates credits, streams the Astra response (Fireworks
+ * primary, Claude fallback), and deducts credits atomically on success. All
+ * credit operations are server-side
  * — the client never controls or can bypass the balance.
  *
  * Security model:
@@ -162,7 +163,7 @@ export async function POST(req: NextRequest) {
     return { role: m.role, content: m.content };
   });
 
-  // ── 4. Stream from Astra (OpenRouter, or Claude fallback) ─────────────────
+  // ── 4. Stream from Astra (Fireworks primary, Claude fallback) ─────────────
   const result = await streamAstraText(
     [
       { role: "system", content: system },

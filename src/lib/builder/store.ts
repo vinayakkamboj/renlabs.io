@@ -129,7 +129,7 @@ function describeBuildError(e: unknown): string {
   const msg = e instanceof Error ? e.message : "";
 
   if (msg === "builder_not_configured") {
-    return "The build agent isn't configured. Set OPENROUTER_API_KEY (or ANTHROPIC_API_KEY) on the server, then try again.";
+    return "The build agent isn't configured. Set FIREWORKS_API_KEY (or ANTHROPIC_API_KEY) on the server, then try again.";
   }
   if (msg === "insufficient_credits") {
     return "You're out of build credits. Top up in Billing to keep building.";
@@ -148,7 +148,7 @@ function describeBuildError(e: unknown): string {
       status === 401 || status === 403
         ? "The Astra API key was rejected — check the key on the server."
         : status === 404
-          ? "The configured Astra model wasn't found — check OPENROUTER_MODEL / ANTHROPIC_MODEL."
+          ? "The configured Astra model wasn't found — check FIREWORKS_MODEL / ANTHROPIC_MODEL."
           : status === 429
             ? "Astra is rate-limited right now. Wait a moment and try again."
             : status >= 500
