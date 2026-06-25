@@ -75,10 +75,14 @@ export default async function WorkspacePage({ params }: PageProps) {
   // Resolve the initial file set: existing saved files → repo files → template.
   let initialFiles: ProjectFile[] = [];
   let hadFirstBuild = false;
+  // Tracks whether we actually loaded the repo from GitHub (vs fell back to
+  // the blank template because the session was missing or the API failed).
+  let repoFilesLoaded = false;
 
   if (savedResult.data && savedResult.data.length) {
     initialFiles = savedResult.data as ProjectFile[];
     hadFirstBuild = true;
+    repoFilesLoaded = true;
   }
 
   if (!initialFiles.length && project.kind === "repository" && repo) {
@@ -92,7 +96,8 @@ export default async function WorkspacePage({ params }: PageProps) {
       );
       if (repoFiles.length) {
         initialFiles = repoFiles;
-        hadFirstBuild = true; // an existing repo is not a blank first build
+        hadFirstBuild = true;
+        repoFilesLoaded = true;
       }
     }
   }
@@ -110,6 +115,7 @@ export default async function WorkspacePage({ params }: PageProps) {
       repoDefaultBranch={repo?.default_branch ?? null}
       initialFiles={initialFiles}
       hadFirstBuild={hadFirstBuild}
+      repoFilesLoaded={repoFilesLoaded}
       supabaseConnected={!!supabaseIntegration}
       supabaseUrl={supabaseIntegration?.projectUrl ?? null}
     />
