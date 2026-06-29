@@ -261,6 +261,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       streamingText: "",
       error: null,
     }));
+    // Persist the prompt immediately so a refresh mid-build keeps the request
+    // (and any files built so far) instead of resetting to a blank template.
+    persist(get().projectId, get().projectFiles, get().messages);
 
     // Usage accumulates across the initial run and any repair pass so the chat
     // shows the true cost of producing the final result.
@@ -399,13 +402,15 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           firstB && !plan.changes.some((c) => c.path === "src/App.tsx");
         if (!issues.length && !missingApp) break; // complete — apply happens below
 
-        // Commit what we have so the next pass builds ON it (edit mode).
+        // Commit what we have so the next pass builds ON it (edit mode), and
+        // persist it so a refresh keeps the partial app instead of losing it.
         set({
           projectFiles: applyPatchPlan(get().projectFiles, plan),
           isFirstBuild: false,
           phase: "thinking",
           streamingText: "Finishing the build…",
         });
+        persist(get().projectId, get().projectFiles, get().messages);
         const note = missingApp
           ? "Your previous response was cut off before the app was finished. Continue: create every remaining file — especially src/App.tsx wiring routes for all pages — and any page/component referenced but not yet created. Keep all existing files intact; output only what is still missing or broken."
           : describeFatalIssues(issues);
