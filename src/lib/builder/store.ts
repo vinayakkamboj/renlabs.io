@@ -401,7 +401,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       // passes: once App.tsx is actually written, the app is considered wired.
       const wasFirstBuild = get().isFirstBuild;
       let appWritten =
-        !wasFirstBuild || plan.changes.some((c) => c.path === "src/App.tsx");
+        !wasFirstBuild ||
+        (plan?.changes.some((c) => c.path === "src/App.tsx") ?? false);
       for (let pass = 0; plan && pass < MAX_FINISH_PASSES; pass++) {
         if (plan.changes.some((c) => c.path === "src/App.tsx")) appWritten = true;
         const issues = detectFatalIssues(plan, get().projectFiles, wasFirstBuild);
