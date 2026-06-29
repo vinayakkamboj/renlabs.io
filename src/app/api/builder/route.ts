@@ -69,7 +69,7 @@ interface BuildRequest {
 // "finish the job" loop then continues building until the app is whole. This is
 // the bounded-step approach — many fast calls beat one call that times out.
 // Override with ASTRA_MAX_OUTPUT_TOKENS if you're on a longer-timeout host.
-const MAX_OUTPUT_TOKENS = Number(process.env.ASTRA_MAX_OUTPUT_TOKENS) || 8_000;
+const MAX_OUTPUT_TOKENS = Number(process.env.ASTRA_MAX_OUTPUT_TOKENS) || 16_000;
 
 // Hard ceiling on the design-phase plan. Kept tight so planning leaves the build
 // phase as much of the function's time budget as possible (a long plan on a

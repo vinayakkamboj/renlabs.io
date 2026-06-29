@@ -395,12 +395,19 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       // we run several to assemble a full app. Allow enough passes to finish a
       // multi-page site without a single call ever risking a 504.
       const MAX_FINISH_PASSES = 4;
+      // Capture the first-build intent ONCE — it must not flip mid-loop, or the
+      // "App.tsx still missing" check would wrongly read as satisfied after the
+      // first partial pass and stop continuing. `appWritten` stays sticky across
+      // passes: once App.tsx is actually written, the app is considered wired.
+      const wasFirstBuild = get().isFirstBuild;
+      let appWritten =
+        !wasFirstBuild || plan.changes.some((c) => c.path === "src/App.tsx");
       for (let pass = 0; plan && pass < MAX_FINISH_PASSES; pass++) {
-        const firstB = get().isFirstBuild;
-        const issues = detectFatalIssues(plan, get().projectFiles, firstB);
-        const missingApp =
-          firstB && !plan.changes.some((c) => c.path === "src/App.tsx");
-        if (!issues.length && !missingApp) break; // complete — apply happens below
+        if (plan.changes.some((c) => c.path === "src/App.tsx")) appWritten = true;
+        const issues = detectFatalIssues(plan, get().projectFiles, wasFirstBuild);
+        // Incomplete if imports dangle (missing files) OR a first build hasn't
+        // written its App.tsx yet (it was cut off before wiring the app up).
+        if (!issues.length && appWritten) break; // complete — apply happens below
 
         // Commit what we have so the next pass builds ON it (edit mode), and
         // persist it so a refresh keeps the partial app instead of losing it.
@@ -411,8 +418,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           streamingText: "Finishing the build…",
         });
         persist(get().projectId, get().projectFiles, get().messages);
-        const note = missingApp
-          ? "Your previous response was cut off before the app was finished. Continue: create every remaining file — especially src/App.tsx wiring routes for all pages — and any page/component referenced but not yet created. Keep all existing files intact; output only what is still missing or broken."
+        const note = !appWritten
+          ? "The app is only partially built. Continue building it: create every file still missing — START with src/App.tsx wiring HashRouter routes for all pages, then each page and component referenced but not yet created. Keep all existing files intact; output ONLY the files still missing or broken, as a <file_patches> block."
           : describeFatalIssues(issues);
         const nextFull = await runBuild(note);
         const nextPlan = parseFilePatchPlan(nextFull);
