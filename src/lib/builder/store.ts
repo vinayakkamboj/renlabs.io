@@ -370,6 +370,17 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       let full = await runBuild();
       let plan = parseFilePatchPlan(full);
 
+      // Safety net: if the first attempt returned no usable file block at all
+      // (the model replied with prose, or came back empty because a slow phase
+      // ate the budget), force ONE direct retry that demands the patch format
+      // before we ever show "couldn't produce a valid change".
+      if (!plan) {
+        set({ phase: "writing", streamingText: "Generating files…" });
+        full = await runBuild(
+          "Output the application NOW as a single <file_patches> JSON block with the FULL contents of every file. Do not explain, do not ask questions, do not return prose — emit only the <file_patches> block.",
+        );
+        plan = parseFilePatchPlan(full);
+      }
       // Finish-the-job pass. A first build that came back truncated (connection
       // dropped, or token limit) or with dangling imports is INCOMPLETE, not
       // broken. Rather than regenerate the whole app from scratch — which just

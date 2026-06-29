@@ -223,7 +223,7 @@ export async function POST(req: NextRequest) {
   );
 
   const designPhase =
-    process.env.ASTRA_DESIGN_PHASE !== "0" &&
+    process.env.ASTRA_DESIGN_PHASE === "1" &&
     body.isFirstBuild === true &&
     !hasExistingApp &&
     !isRepo &&
