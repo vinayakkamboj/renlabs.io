@@ -388,7 +388,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       // building on top of it (edit mode), the way a real coding agent finishes
       // its work. A first build that never wrote src/App.tsx counts as incomplete
       // even when nothing dangles (it was cut off before wiring the app up).
-      const MAX_FINISH_PASSES = 2;
+      // Each build call is bounded (small token ceiling) so it never times out;
+      // we run several to assemble a full app. Allow enough passes to finish a
+      // multi-page site without a single call ever risking a 504.
+      const MAX_FINISH_PASSES = 4;
       for (let pass = 0; plan && pass < MAX_FINISH_PASSES; pass++) {
         const firstB = get().isFirstBuild;
         const issues = detectFatalIssues(plan, get().projectFiles, firstB);

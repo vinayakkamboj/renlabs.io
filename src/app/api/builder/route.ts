@@ -62,10 +62,14 @@ interface BuildRequest {
   images?: string[];
 }
 
-// Generous ceiling so multi-file builds finish without truncating mid-file.
-// (If a response still gets cut off, the parser drops the incomplete file and
-// the build loop repairs it — but more headroom means that rarely fires.)
-const MAX_OUTPUT_TOKENS = 32_000;
+// Per-call output ceiling. Kept BOUNDED on purpose: a single 30k-token
+// generation takes longer than a serverless function is allowed to run, so the
+// host kills it mid-stream and the client sees a 504. A smaller ceiling means
+// each call finishes well within the function budget; the client's multi-pass
+// "finish the job" loop then continues building until the app is whole. This is
+// the bounded-step approach — many fast calls beat one call that times out.
+// Override with ASTRA_MAX_OUTPUT_TOKENS if you're on a longer-timeout host.
+const MAX_OUTPUT_TOKENS = Number(process.env.ASTRA_MAX_OUTPUT_TOKENS) || 8_000;
 
 // Hard ceiling on the design-phase plan. Kept tight so planning leaves the build
 // phase as much of the function's time budget as possible (a long plan on a
