@@ -237,7 +237,7 @@ export async function POST(req: NextRequest) {
   if (!designPhase) {
     const result = await streamAstraText(buildMessages(baseSystem), {
       maxTokens: MAX_OUTPUT_TOKENS,
-      reasoningEffort: "low",
+      reasoningEffort: "high",
     });
     if (!result.ok) {
       return Response.json(
@@ -268,7 +268,7 @@ export async function POST(req: NextRequest) {
           {
             maxTokens: 1200,
             model: planningModelId(),
-            reasoningEffort: "low",
+            reasoningEffort: "high",
             signal: AbortSignal.timeout(PLAN_TIMEOUT_MS),
           },
         );
@@ -295,7 +295,7 @@ export async function POST(req: NextRequest) {
       const sys = plan.length > 80 ? buildNewProjectPrompt(plan) : baseSystem;
       const buildRes = await streamAstraText(buildMessages(sys), {
         maxTokens: MAX_OUTPUT_TOKENS,
-        reasoningEffort: "low",
+        reasoningEffort: "high",
       });
       if (!buildRes.ok) {
         controller.enqueue(

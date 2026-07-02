@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
   // Tiny live generation to prove the active provider actually answers.
   const result = await streamAstraText(
     [{ role: "user", content: "Reply with exactly: GLM_OK" }],
-    { maxTokens: 16, reasoningEffort: "low" },
+    { maxTokens: 16, reasoningEffort: "high" },
   );
 
   if (!result.ok) {
