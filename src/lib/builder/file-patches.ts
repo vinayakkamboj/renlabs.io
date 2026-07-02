@@ -29,7 +29,15 @@ export function parseFilePatchPlan(content: string): FilePatchPlan | null {
   const match = strictMatch ?? looseMatch;
   if (!match) return null;
 
-  const raw = match[1].trim();
+  // Models (GLM especially) often wrap the JSON in a markdown code fence
+  // despite instructions. Unwrap it BEFORE the strict parse — otherwise the
+  // fence forces the lossy scan recovery, which silently drops edits/deletes/
+  // renames and the plan summary.
+  const raw = match[1]
+    .trim()
+    .replace(/^```(?:json)?\s*\n?/i, "")
+    .replace(/\n?```\s*$/, "")
+    .trim();
 
   // Strategy 1 — direct parse (happy path: the block is complete and valid).
   // Accept any plan that carries work — full-file changes OR surgical edits.
@@ -235,6 +243,11 @@ export function isCodeFileComplete(content: string): boolean {
   let inString: string | null = null; // active quote char: ' " `
   let inLineComment = false;
   let inBlockComment = false;
+  let inRegex = false; // inside a /regex literal/
+  let inRegexClass = false; // inside [...] within a regex (a / here doesn't end it)
+  // Last significant (non-whitespace, non-comment, non-string) char seen — used
+  // to distinguish a regex literal from the division operator.
+  let prevSig = "";
 
   for (let i = 0; i < src.length; i++) {
     const ch = src[i];
@@ -248,6 +261,27 @@ export function isCodeFileComplete(content: string): boolean {
       if (ch === "*" && next === "/") {
         inBlockComment = false;
         i++;
+      }
+      continue;
+    }
+    if (inRegex) {
+      // Quotes and brackets inside a regex literal are plain characters —
+      // without this, `s.replace(/["']/g, "")` reads as an unterminated string
+      // and a perfectly complete file gets flagged as truncated.
+      if (ch === "\\") {
+        i++;
+        continue;
+      }
+      if (ch === "[") inRegexClass = true;
+      else if (ch === "]") inRegexClass = false;
+      else if (ch === "/" && !inRegexClass) {
+        inRegex = false;
+        prevSig = "/"; // regex value ended — a following / would be division
+      } else if (ch === "\n") {
+        // Regex literals can't span lines — this wasn't a regex after all.
+        // Bail out conservatively (the check must never wrongly reject).
+        inRegex = false;
+        inRegexClass = false;
       }
       continue;
     }
@@ -271,6 +305,20 @@ export function isCodeFileComplete(content: string): boolean {
       i++;
       continue;
     }
+    if (ch === "/") {
+      // Regex literal vs division: after an identifier/number/closing bracket
+      // it's division, and after } > < it's JSX (self-close `/>`, closing tag
+      // `</`) — only an operator/opening-bracket position starts a regex
+      // (after ( [ { , ; = : ! & | ? etc. or at file start).
+      const divisionBefore = /[\w$)\]}><]/.test(prevSig);
+      if (!divisionBefore) {
+        inRegex = true;
+        inRegexClass = false;
+        continue;
+      }
+      prevSig = ch;
+      continue;
+    }
     if (ch === '"' || ch === "'" || ch === "`") {
       inString = ch;
       continue;
@@ -280,6 +328,7 @@ export function isCodeFileComplete(content: string): boolean {
     } else if (ch === ")" || ch === "]" || ch === "}") {
       if (stack.pop() !== closeToOpen[ch]) return false; // mismatched close
     }
+    if (!/\s/.test(ch)) prevSig = ch;
   }
 
   // Complete only if we didn't end mid-string, mid-comment, or with open brackets.
@@ -294,6 +343,10 @@ export function stripFilePatchPlan(content: string): string {
   // the entire reasoning dump streams into the chat panel and looks broken.
   stripped = stripped.replace(/<thinking>[\s\S]*?<\/thinking>/gi, "");
   stripped = stripped.replace(/<thinking>[\s\S]*$/i, "");
+  // GLM-family models use <think> (not <thinking>) when reasoning leaks into
+  // the content stream — strip both closed and trailing-unclosed variants.
+  stripped = stripped.replace(/<think>[\s\S]*?<\/think>/gi, "");
+  stripped = stripped.replace(/<think>[\s\S]*$/i, "");
   // Remove the file_patches block (closed, or trailing/unclosed while streaming).
   stripped = stripped.replace(/<file_patches>[\s\S]*?<\/file_patches>/, "");
   stripped = stripped.replace(/<file_patches>[\s\S]*$/, "");

@@ -22,6 +22,7 @@ const STACK = `## Stack (fixed — do not change the toolchain)
   - **date-fns** — date formatting and math.
   - **clsx** + **tailwind-merge** — via \`cn()\` at \`src/lib/utils\`.
   - **class-variance-authority** — variant-based component styles.
+  - **three** + **@react-three/fiber** + **@react-three/drei** — 3D scenes and 3D games ONLY (voxel worlds, first-person games, 3D visualizations). Never pull three.js into a regular website or dashboard.
   Do not import packages outside this list.
 - Design tokens live in \`src/index.css\` as HSL values under \`:root\` and \`[data-theme="dark"]\`. JSX uses semantic Tailwind classes (\`bg-primary\`, \`text-foreground\`, \`text-muted-foreground\`, \`border-border\`, \`bg-card\`, etc.). Never hardcode hex colors outside \`src/index.css\`.`;
 
@@ -74,6 +75,27 @@ src/
 - All list and detail data lives in \`src/data/\` as typed arrays/objects — never inline large datasets in components.
 - Define TypeScript interfaces in \`src/data/types.ts\` or per-domain files.
 - Always handle loading, empty, and error states — never assume data is always present.`;
+
+const GAMES = `## Games — when the product is a game, build a REAL game
+
+Identify game requests ("clone of X", "a game where…", arcade/puzzle/sandbox/shooter/platformer) and switch to game engineering:
+
+### Rendering & performance (the #1 failure is a laggy game)
+- **2D games: render on a \`<canvas>\` with a \`requestAnimationFrame\` loop.** NEVER render moving entities as DOM elements or drive per-frame movement through React state — setState every frame re-renders the tree and stutters.
+- **Game state lives in refs/plain objects** (\`useRef\`) mutated inside the loop. React state is ONLY for low-frequency UI: score, health, menus, game-over — updated a few times per second at most.
+- **3D games (voxel worlds, first-person, driving): use three + @react-three/fiber + @react-three/drei.** Instanced meshes for repeated blocks (\`<instancedMesh>\`), \`useFrame\` for the loop. Keep draw calls low — a voxel world renders only exposed faces or a bounded chunk (e.g. 16×16×8), never one mesh per hidden block.
+- Fixed timestep for physics/movement (accumulate dt), cap entity counts, reuse objects — no allocations inside the frame loop.
+
+### Input & focus (the #2 failure is controls that don't work in the preview)
+- Keyboard: listeners on \`window\` (\`keydown\`/\`keyup\` into a \`keysRef\` set), cleaned up on unmount. Support WASD **and** arrows.
+- The preview runs in an iframe — it must be clicked before it receives keys. ALWAYS ship a **"Click to start" overlay** that starts the loop on click (and on any key) so focus is guaranteed.
+- Pause on \`Escape\`. Show controls in the HUD or start overlay.
+
+### Game completeness (a "game" that can't be played is a hard failure)
+- Ship a full loop: start screen → play → score/win/lose → restart. Never a static scene.
+- HUD (score/health/inventory) as React UI over the canvas, styled with the same design tokens as the rest of the app.
+- Include real mechanics for the genre: collision, spawning, difficulty ramp for arcade; place/break + hotbar for sandbox; gravity/jump tuning for platformers (coyote time makes it feel good).
+- Sound is optional; if skipped, don't reference audio files that don't exist.`;
 
 const CORRECTNESS = `## Correctness — the code MUST run on the first try
 
@@ -317,6 +339,8 @@ ${ARCHITECTURE}
 
 ${ENGINEERING}
 
+${GAMES}
+
 ${DESIGN}
 
 ${SIGNATURE}
@@ -397,6 +421,8 @@ ${STACK}
 ${ARCHITECTURE}
 
 ${ENGINEERING}
+
+${GAMES}
 
 ${DESIGN}
 
