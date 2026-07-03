@@ -16,7 +16,7 @@ import { after } from "next/server";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import { deductBuildCredits } from "@/lib/credits/server";
 import { CREDITS_PER_BUILD } from "@/lib/credits/config";
-import { runBuildJob } from "@/lib/builder/job-runner";
+import { runBuildStep } from "@/lib/builder/job-runner";
 
 interface CreateJobRequest {
   projectId?: string;
@@ -115,9 +115,13 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: "jobs_unavailable" }, { status: 503 });
   }
 
-  // Run the agentic loop AFTER the response is sent — survives tab close.
+  // Run the FIRST pass after the response is sent; each pass chains the next
+  // as a fresh invocation, so no single function run approaches the platform
+  // time limit no matter how large the build is.
+  const origin =
+    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ?? new URL(req.url).origin;
   after(async () => {
-    await runBuildJob(jobRow.id);
+    await runBuildStep(jobRow.id, origin);
   });
 
   return Response.json({
