@@ -246,6 +246,9 @@ export async function POST(req: NextRequest) {
       );
     }
     headers["x-ren-planned"] = "0";
+    // Which provider ACTUALLY served (after any silent failover) — surfaced so
+    // the client can tell whether this build ran on Fireworks/GLM or Claude.
+    headers["x-ren-provider"] = result.provider;
     return new Response(result.stream, { headers });
   }
 

@@ -570,3 +570,104 @@ export function applyPatchPlan(
 export function describeFatalIssues(issues: FatalIssue[]): string {
   return issues.map((i, idx) => `${idx + 1}. [${i.type}] ${i.detail}`).join("\n");
 }
+
+// ─── Dangling-import safety net ─────────────────────────────────────────────
+
+/** Turn "HomePage" / "use-cart" into a valid PascalCase component name. */
+function componentNameFromPath(path: string): string {
+  const base = path.split("/").pop()?.replace(/\.(tsx|ts|jsx|js)$/, "") ?? "Stub";
+  const name = base
+    .split(/[^a-zA-Z0-9]/)
+    .filter(Boolean)
+    .map((s) => s[0].toUpperCase() + s.slice(1))
+    .join("");
+  return /^[A-Za-z_$]/.test(name) ? name : `Stub${name}`;
+}
+
+/** Resolve "./pages/HomePage" from "src/App.tsx" → "src/pages/HomePage". */
+function resolveRelative(importerPath: string, spec: string): string {
+  const parts = importerPath.split("/").slice(0, -1);
+  for (const seg of spec.split("/")) {
+    if (seg === "." || seg === "") continue;
+    else if (seg === "..") parts.pop();
+    else parts.push(seg);
+  }
+  return parts.join("/");
+}
+
+/**
+ * Guarantee the file set is RUNNABLE: for every relative import that doesn't
+ * resolve to an existing file, generate a minimal placeholder module so the
+ * preview renders instead of crashing with "Could not find module".
+ *
+ * This is the safety net for interrupted builds — a partial pass that shipped
+ * src/App.tsx importing pages that were never generated (stream cut off, user
+ * pressed Stop mid-continuation, refresh mid-build) must never brick the app.
+ * Stubs are visibly "still being built" so the user knows to continue.
+ */
+export function stubDanglingImports(files: ProjectFile[]): {
+  files: ProjectFile[];
+  stubbed: string[];
+} {
+  const have = new Set(files.map((f) => f.path));
+  const out = [...files];
+  const stubbed: string[] = [];
+
+  const exists = (p: string) =>
+    have.has(p) ||
+    ["tsx", "ts", "jsx", "js", "css", "json"].some((ext) => have.has(`${p}.${ext}`)) ||
+    ["tsx", "ts"].some((ext) => have.has(`${p}/index.${ext}`));
+
+  const importRe =
+    /import\s+(?:([A-Za-z_$][\w$]*)\s*,?\s*)?(?:\{([^}]*)\})?\s*(?:from\s*)?["'](\.\.?\/[^"']+)["']/g;
+
+  for (const file of files) {
+    if (!isCodePath(file.path)) continue;
+    let m: RegExpExecArray | null;
+    while ((m = importRe.exec(file.content)) !== null) {
+      const [, defaultName, namedGroup, spec] = m;
+      const target = resolveRelative(file.path, spec);
+      if (exists(target)) continue;
+
+      if (/\.css$/.test(target)) {
+        out.push({ path: target, content: "/* pending — being built */\n" });
+        have.add(target);
+        stubbed.push(target);
+        continue;
+      }
+
+      const path = /\.(tsx|ts|jsx|js)$/.test(target) ? target : `${target}.tsx`;
+      if (have.has(path)) continue;
+
+      const named = (namedGroup ?? "")
+        .split(",")
+        .map((s) => s.trim().split(/\s+as\s+/)[0].trim())
+        .filter((s) => /^[A-Za-z_$][\w$]*$/.test(s));
+
+      const lines: string[] = [
+        `// Auto-stub: this module was referenced but not yet generated.`,
+        `// Ask Ren to "continue the build" to replace it with the real thing.`,
+      ];
+      for (const n of named) {
+        lines.push(`export const ${n}: any = () => null;`);
+      }
+      const comp = defaultName ?? componentNameFromPath(path);
+      lines.push(
+        `export default function ${componentNameFromPath(path)}() {`,
+        `  return (`,
+        `    <div style={{ minHeight: "40vh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 8, fontFamily: "system-ui", color: "#666" }}>`,
+        `      <strong style={{ fontSize: 18, color: "#333" }}>${comp} is still being built</strong>`,
+        `      <span style={{ fontSize: 14 }}>The build was interrupted — ask Ren to continue and finish this page.</span>`,
+        `    </div>`,
+        `  );`,
+        `}`,
+      );
+
+      out.push({ path, content: lines.join("\n") + "\n" });
+      have.add(path);
+      stubbed.push(path);
+    }
+  }
+
+  return { files: out, stubbed };
+}

@@ -19,6 +19,7 @@ import {
   describeFatalIssues,
   isCodePath,
   isCodeFileComplete,
+  stubDanglingImports,
 } from "./file-patches";
 import { createBaseTemplate } from "./base-template";
 import { DEFAULT_MODEL_TIER, type ModelTierId } from "./model-tiers";
@@ -316,6 +317,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       const dedHeader = res.headers.get("x-ren-credits-deducted");
       if (balHeader !== null) set({ creditsBalance: Number(balHeader) });
       if (dedHeader !== null) usageAcc.creditsDeducted! += Number(dedHeader);
+      // Which provider actually served this build (fireworks = GLM primary,
+      // anthropic = Claude fallback kicked in). Logged for diagnosis.
+      const provider = res.headers.get("x-ren-provider");
+      if (provider) console.info(`[ren] build served by: ${provider}`);
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -369,6 +374,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       return text;
     };
 
+    // True once a partial pass has been applied+persisted this turn — the
+    // abort handler must not claim "files are unchanged" when they have.
+    let partialApplied = false;
+
     try {
       let full = await runBuild();
       let plan = parseFilePatchPlan(full);
@@ -412,8 +421,15 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
         // Commit what we have so the next pass builds ON it (edit mode), and
         // persist it so a refresh keeps the partial app instead of losing it.
+        // Stub any dangling imports so the persisted partial always RUNS —
+        // a Stop or refresh mid-continuation must never leave App.tsx importing
+        // pages that don't exist yet ("Could not find module" preview crash).
+        const safePartial = stubDanglingImports(
+          applyPatchPlan(get().projectFiles, plan),
+        ).files;
+        partialApplied = true;
         set({
-          projectFiles: applyPatchPlan(get().projectFiles, plan),
+          projectFiles: safePartial,
           isFirstBuild: false,
           phase: "thinking",
           streamingText: "Finishing the build…",
@@ -475,15 +491,29 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         throw new Error("truncated_empty");
       }
 
-      const nextFiles = applyPatchPlan(get().projectFiles, plan);
+      // Final integrity pass: stub any import that still doesn't resolve so the
+      // preview always renders (a visible "still being built" page beats a
+      // "Could not find module" crash).
+      const { files: nextFiles, stubbed } = stubDanglingImports(
+        applyPatchPlan(get().projectFiles, plan),
+      );
       // Track both full-file writes and surgical edits as "changed".
       const changedPaths = Array.from(
         new Set([...plan.changes.map((c) => c.path), ...editPaths]),
       );
 
-      const note = droppedFiles.length
-        ? `\n\n_Note: ${droppedFiles.length} file(s) came back incomplete and were skipped to keep the preview working — ask me to finish ${droppedFiles.join(", ")}._`
-        : "";
+      const noteParts: string[] = [];
+      if (droppedFiles.length) {
+        noteParts.push(
+          `${droppedFiles.length} file(s) came back incomplete and were skipped to keep the preview working — ask me to finish ${droppedFiles.join(", ")}.`,
+        );
+      }
+      if (stubbed.length) {
+        noteParts.push(
+          `${stubbed.length} referenced file(s) weren't generated yet, so I stubbed them to keep the app running — say "continue the build" and I'll finish ${stubbed.join(", ")}.`,
+        );
+      }
+      const note = noteParts.length ? `\n\n_Note: ${noteParts.join(" ")}_` : "";
 
       // Keep the chat concise: lead with the one-line plan summary (the file
       // list is shown as a chip below). Only fall back to prose if there's no
@@ -521,7 +551,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         const stoppedMsg: BuildMessage = {
           id: newId(),
           role: "assistant",
-          content: "Stopped. Your files are unchanged — send a new instruction whenever you're ready.",
+          content: partialApplied
+            ? 'Stopped. I kept the files built so far and stubbed any missing pages so the preview still runs — say "continue the build" to finish the rest.'
+            : "Stopped. Your files are unchanged — send a new instruction whenever you're ready.",
           createdAt: new Date().toISOString(),
         };
         set((s) => ({
