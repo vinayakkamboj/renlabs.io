@@ -32,6 +32,13 @@ import type { ProjectFile, BuildMessage, TurnUsage } from "./types";
 
 type BuildPhase = "idle" | "thinking" | "writing" | "applying" | "error";
 
+/** One line of the live build activity feed (background job mode). */
+export interface BuildStep {
+  t: number;
+  kind: "thinking" | "writing" | "verifying" | "repairing" | "applying" | "info" | "error";
+  text: string;
+}
+
 interface WorkspaceState {
   projectId: string;
   projectKind: "new" | "repository";
@@ -50,6 +57,10 @@ interface WorkspaceState {
   creditsBalance: number | null;
   /** Usage of the most recent assistant turn, for the header readout. */
   lastUsage: TurnUsage | null;
+  /** Background job activity feed (empty in legacy streaming mode). */
+  buildSteps: BuildStep[];
+  /** Id of the in-flight background job, if any. */
+  activeJobId: string | null;
 
   initialize: (
     projectId: string,
@@ -70,6 +81,8 @@ interface WorkspaceState {
   sendMessage: (text: string, images?: string[]) => Promise<void>;
   /** Abort an in-flight build. Stops the stream and leaves files untouched. */
   stopBuild: () => void;
+  /** Resume watching a background job after a reload/return to the workspace. */
+  resumeActiveJob: () => Promise<void>;
 }
 
 const LS_PREFIX = "ren-workspace:";
@@ -182,6 +195,8 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   error: null,
   creditsBalance: null,
   lastUsage: null,
+  buildSteps: [],
+  activeJobId: null,
 
   initialize: (projectId, files, messages, isFirstBuild, projectKind = "new") => {
     const seeded = files.length ? files : createBaseTemplate();
@@ -230,6 +245,18 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   stopBuild: () => {
     if (!get().isBuilding) return;
+    const jobId = get().activeJobId;
+    if (jobId) {
+      // Background job: request server-side cancellation; the watcher reports
+      // the final state (the runner stops at the next pass boundary).
+      void fetch(`/api/builder/jobs/${jobId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cancel: true }),
+      }).catch(() => {});
+      set({ streamingText: "Stopping…" });
+      return;
+    }
     buildAbortController?.abort();
     buildAbortController = null;
     set({
@@ -238,6 +265,34 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       streamingText: "",
       error: null,
     });
+  },
+
+  resumeActiveJob: async () => {
+    const projectId = get().projectId;
+    if (!projectId || get().isBuilding) return;
+    try {
+      const res = await fetch(`/api/builder/jobs?projectId=${encodeURIComponent(projectId)}`);
+      if (!res.ok) return;
+      const { job } = (await res.json()) as { job: JobStatus | null };
+      if (!job) return;
+      const ACTIVE = ["queued", "thinking", "writing", "verifying", "repairing", "applying"];
+      if (ACTIVE.includes(job.status)) {
+        // A build is still running server-side — reattach to it.
+        set({
+          isBuilding: true,
+          activeJobId: job.id,
+          buildSteps: (job.steps ?? []) as BuildStep[],
+          phase: jobPhase(job.status),
+          error: null,
+        });
+        watchJob(job.id, job.credits_deducted ?? 0);
+      } else if (job.status === "done" && localStorage.getItem(SEEN_JOB_KEY + projectId) !== job.id) {
+        // Finished while the user was away — pull in the results now.
+        await finalizeJob(job, job.credits_deducted ?? 0);
+      }
+    } catch {
+      /* resume is best-effort */
+    }
   },
 
   sendMessage: async (text, images) => {
@@ -265,6 +320,51 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     // Persist the prompt immediately so a refresh mid-build keeps the request
     // (and any files built so far) instead of resetting to a blank template.
     persist(get().projectId, get().projectFiles, get().messages);
+
+    // ── Background job mode (preferred) ──────────────────────────────────────
+    // The build runs server-side and survives closing the browser. Falls back
+    // to the legacy in-browser stream when jobs are unavailable (no migration,
+    // Supabase off) or the message carries images (vision needs the stream path).
+    if (!images?.length) {
+      try {
+        const jobRes = await fetch("/api/builder/jobs", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            projectId: get().projectId,
+            prompt: trimmed,
+            messages: get().messages.map((m) => ({ role: m.role, content: m.content })),
+            isFirstBuild: get().isFirstBuild,
+          }),
+        });
+        if (jobRes.ok) {
+          const d = (await jobRes.json()) as {
+            jobId: string;
+            creditsDeducted?: number;
+            creditsBalance?: number | null;
+          };
+          if (typeof d.creditsBalance === "number") set({ creditsBalance: d.creditsBalance });
+          set({ activeJobId: d.jobId, phase: "thinking", buildSteps: [] });
+          watchJob(d.jobId, d.creditsDeducted ?? 0);
+          return; // the job watcher owns completion from here
+        }
+        if (jobRes.status === 402) throw new Error("insufficient_credits");
+        if (jobRes.status === 401) throw new Error("auth_required");
+        // 503 jobs_unavailable (or anything else) → legacy streaming below.
+      } catch (e) {
+        if (e instanceof Error && (e.message === "insufficient_credits" || e.message === "auth_required")) {
+          const reason = describeBuildError(e);
+          set((s) => ({
+            messages: [...s.messages, { id: newId(), role: "assistant" as const, content: reason, createdAt: new Date().toISOString() }],
+            isBuilding: false,
+            phase: "error" as const,
+            error: reason,
+          }));
+          return;
+        }
+        // Network hiccup on job creation — fall through to the streaming path.
+      }
+    }
 
     // Usage accumulates across the initial run and any repair pass so the chat
     // shows the true cost of producing the final result.
@@ -584,3 +684,146 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     }
   },
 }));
+
+// ─── Background job watcher (module scope — uses the store's static API) ────
+
+const SEEN_JOB_KEY = "ren-seen-job:";
+const JOB_POLL_MS = 1600;
+
+interface JobStatus {
+  id: string;
+  status: string;
+  steps: BuildStep[] | null;
+  result_summary: string | null;
+  changed_paths: string[] | null;
+  error: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  credits_deducted: number;
+}
+
+let jobPollTimer: ReturnType<typeof setTimeout> | null = null;
+
+function jobPhase(status: string): BuildPhase {
+  if (status === "writing") return "writing";
+  if (status === "applying") return "applying";
+  return "thinking"; // queued / thinking / verifying / repairing
+}
+
+function appendAssistant(content: string, extra?: Partial<BuildMessage>) {
+  const s = useWorkspaceStore.getState();
+  const msg: BuildMessage = {
+    id: newId(),
+    role: "assistant",
+    content,
+    createdAt: new Date().toISOString(),
+    ...extra,
+  };
+  useWorkspaceStore.setState({ messages: [...s.messages, msg] });
+  persist(s.projectId, useWorkspaceStore.getState().projectFiles, useWorkspaceStore.getState().messages);
+}
+
+/** A finished job — pull the built files into the workspace and close out. */
+async function finalizeJob(job: JobStatus, creditsDeducted: number) {
+  const { projectId } = useWorkspaceStore.getState();
+  try {
+    const res = await fetch(`/api/builder/files?projectId=${encodeURIComponent(projectId)}`);
+    const { files } = (await res.json()) as { files: ProjectFile[] };
+    const changed = (job.changed_paths ?? []) as string[];
+    const usage: TurnUsage | null =
+      job.output_tokens > 0
+        ? {
+            inputTokens: job.input_tokens,
+            outputTokens: job.output_tokens,
+            creditsDeducted,
+          }
+        : null;
+
+    if (files?.length) {
+      useWorkspaceStore.setState((s) => ({
+        projectFiles: files,
+        viewerKey: s.viewerKey + 1,
+        isFirstBuild: false,
+        recentlyChanged: changed,
+        activeFile: changed.includes("src/App.tsx")
+          ? "src/App.tsx"
+          : (changed[0] ?? s.activeFile),
+        lastUsage: usage,
+      }));
+    }
+    appendAssistant(job.result_summary || "Build complete.", {
+      plan: { summary: job.result_summary || "Build complete.", files: changed },
+      usage,
+    });
+  } catch {
+    appendAssistant(job.result_summary || "Build complete — refresh to see the new files.");
+  } finally {
+    try {
+      localStorage.setItem(SEEN_JOB_KEY + projectId, job.id);
+    } catch { /* quota */ }
+    useWorkspaceStore.setState({
+      isBuilding: false,
+      phase: "idle",
+      streamingText: "",
+      buildSteps: [],
+      activeJobId: null,
+    });
+  }
+}
+
+/** Poll a background job until it reaches a terminal state. */
+function watchJob(jobId: string, creditsDeducted: number) {
+  if (jobPollTimer) clearTimeout(jobPollTimer);
+
+  const poll = async () => {
+    // The user may have navigated to another project — stop watching.
+    if (useWorkspaceStore.getState().activeJobId !== jobId) return;
+    try {
+      const res = await fetch(`/api/builder/jobs/${jobId}`);
+      if (res.ok) {
+        const { job } = (await res.json()) as { job: JobStatus | null };
+        if (job) {
+          useWorkspaceStore.setState({
+            buildSteps: (job.steps ?? []) as BuildStep[],
+            phase: jobPhase(job.status),
+          });
+          if (job.status === "done") {
+            await finalizeJob(job, creditsDeducted || job.credits_deducted || 0);
+            return;
+          }
+          if (job.status === "error") {
+            const reason = job.error ?? "The build failed on the server.";
+            appendAssistant(reason);
+            useWorkspaceStore.setState({
+              isBuilding: false,
+              phase: "error",
+              error: reason,
+              streamingText: "",
+              buildSteps: [],
+              activeJobId: null,
+            });
+            return;
+          }
+          if (job.status === "cancelled") {
+            appendAssistant(
+              "Stopped. Files already written were kept — say \"continue the build\" to finish the rest.",
+            );
+            useWorkspaceStore.setState({
+              isBuilding: false,
+              phase: "idle",
+              streamingText: "",
+              buildSteps: [],
+              activeJobId: null,
+            });
+            return;
+          }
+        }
+      }
+    } catch {
+      /* transient network error — keep polling; the job is running server-side */
+    }
+    jobPollTimer = setTimeout(poll, JOB_POLL_MS);
+  };
+
+  jobPollTimer = setTimeout(poll, 900);
+}

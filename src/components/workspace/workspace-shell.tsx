@@ -82,6 +82,9 @@ export function WorkspaceShell({
     const isFirstBuild = !hadFirstBuild && !persisted?.messages?.length;
     initialize(projectId, files, messages, isFirstBuild, projectKind);
     setReady(true);
+    // Reattach to a build still running server-side (or pull in one that
+    // finished while the user was away) — builds survive leaving the browser.
+    void useWorkspaceStore.getState().resumeActiveJob();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
