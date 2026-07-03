@@ -19,7 +19,7 @@ import { useWorkspaceStore } from "@/lib/builder/store";
 import { ASTRA_MODEL } from "@/lib/builder/model-tiers";
 import type { BuildMessage } from "@/lib/builder/types";
 
-export function ChatPanel() {
+export function ChatPanel({ projectName }: { projectName?: string }) {
   const messages = useWorkspaceStore((s) => s.messages);
   const isBuilding = useWorkspaceStore((s) => s.isBuilding);
   const phase = useWorkspaceStore((s) => s.phase);
@@ -71,13 +71,13 @@ export function ChatPanel() {
 
   return (
     <div className="flex h-full flex-col bg-carbon">
-      {/* Header */}
+      {/* Header — the project this chat is building (no logo; brand lives in
+          the top bar) */}
       <div className="flex h-11 shrink-0 items-center gap-2.5 border-b border-carbon-line px-4">
-        <RenMark className="size-4 text-brass" />
-        <span className="font-serif text-[1.05rem] font-medium tracking-tight text-dusk">
-          Ren Labs
+        <span className="truncate text-[13px] font-medium text-dusk">
+          {projectName || "Untitled project"}
         </span>
-        <span className="ml-auto rounded-full border border-carbon-line px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.18em] text-dusk-faint">
+        <span className="ml-auto shrink-0 rounded-full border border-carbon-line px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.18em] text-dusk-faint">
           Astra
         </span>
       </div>
@@ -207,14 +207,14 @@ const PHASE_HEADLINE: Record<string, string> = {
   error: "Something went wrong",
 };
 
-function useElapsed(): string {
-  const [start] = useState(() => Date.now());
+function useElapsed(startAt: number | null): string {
+  const [fallback] = useState(() => Date.now());
   const [, tick] = useState(0);
   useEffect(() => {
     const t = setInterval(() => tick((n) => n + 1), 1000);
     return () => clearInterval(t);
   }, []);
-  const s = Math.floor((Date.now() - start) / 1000);
+  const s = Math.max(0, Math.floor((Date.now() - (startAt ?? fallback)) / 1000));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 }
 
@@ -226,7 +226,8 @@ function BuildPipeline({
   streamingText: string;
 }) {
   const buildSteps = useWorkspaceStore((s) => s.buildSteps);
-  const elapsed = useElapsed();
+  const jobStartedAt = useWorkspaceStore((s) => s.jobStartedAt);
+  const elapsed = useElapsed(jobStartedAt);
 
   const latest = buildSteps[buildSteps.length - 1];
   const headline = PHASE_HEADLINE[latest?.kind ?? phase] ?? "Astra is working";

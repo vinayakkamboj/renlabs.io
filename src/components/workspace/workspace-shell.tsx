@@ -77,7 +77,15 @@ export function WorkspaceShell({
 
   useEffect(() => {
     const persisted = loadPersisted(projectId);
-    const files = persisted?.files.length ? persisted.files : initialFiles;
+    // Server files are authoritative once a build has persisted there —
+    // localStorage can be STALE (e.g. a background job finished after the last
+    // visit) and must never clobber freshly generated files. localStorage still
+    // seeds files for never-persisted projects, and always carries the chat.
+    const files = hadFirstBuild
+      ? initialFiles
+      : persisted?.files.length
+        ? persisted.files
+        : initialFiles;
     const messages: BuildMessage[] = persisted?.messages ?? [];
     const isFirstBuild = !hadFirstBuild && !persisted?.messages?.length;
     initialize(projectId, files, messages, isFirstBuild, projectKind);
@@ -117,8 +125,8 @@ export function WorkspaceShell({
             <ArrowLeft className="size-4" />
           </Link>
           <RenMark className="size-4 shrink-0 text-brass" />
-          <span className="truncate text-[13px] font-medium text-dusk">
-            {projectName}
+          <span className="shrink-0 font-serif text-[1rem] font-medium tracking-tight text-dusk">
+            Ren Labs
           </span>
           {repoFullName && (
             <span className="hidden shrink-0 items-center gap-1.5 rounded-full border border-carbon-line px-2 py-0.5 font-mono text-[11px] text-dusk-muted sm:flex">
@@ -196,7 +204,7 @@ export function WorkspaceShell({
       <div className="min-h-0 flex-1">
         <PanelGroup direction="horizontal" className="h-full">
           <Panel defaultSize={30} minSize={22} maxSize={44} className="h-full">
-            <ChatPanel />
+            <ChatPanel projectName={projectName} />
           </Panel>
 
           <PanelResizeHandle className="w-px bg-carbon-line transition-colors hover:bg-brass/40 data-[resize-handle-active]:bg-brass/60" />

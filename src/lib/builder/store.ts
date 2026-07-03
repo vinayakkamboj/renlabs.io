@@ -61,6 +61,8 @@ interface WorkspaceState {
   buildSteps: BuildStep[];
   /** Id of the in-flight background job, if any. */
   activeJobId: string | null;
+  /** Epoch ms when the active job started — survives reloads via created_at. */
+  jobStartedAt: number | null;
 
   initialize: (
     projectId: string,
@@ -197,6 +199,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   lastUsage: null,
   buildSteps: [],
   activeJobId: null,
+  jobStartedAt: null,
 
   initialize: (projectId, files, messages, isFirstBuild, projectKind = "new") => {
     const seeded = files.length ? files : createBaseTemplate();
@@ -283,6 +286,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
           activeJobId: job.id,
           buildSteps: (job.steps ?? []) as BuildStep[],
           phase: jobPhase(job.status),
+          jobStartedAt: job.created_at ? new Date(job.created_at).getTime() : Date.now(),
           error: null,
         });
         watchJob(job.id, job.credits_deducted ?? 0);
@@ -344,7 +348,12 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
             creditsBalance?: number | null;
           };
           if (typeof d.creditsBalance === "number") set({ creditsBalance: d.creditsBalance });
-          set({ activeJobId: d.jobId, phase: "thinking", buildSteps: [] });
+          set({
+            activeJobId: d.jobId,
+            phase: "thinking",
+            buildSteps: [],
+            jobStartedAt: Date.now(),
+          });
           watchJob(d.jobId, d.creditsDeducted ?? 0);
           return; // the job watcher owns completion from here
         }
@@ -693,6 +702,8 @@ const JOB_POLL_MS = 1600;
 interface JobStatus {
   id: string;
   status: string;
+  created_at?: string;
+  updated_at?: string;
   steps: BuildStep[] | null;
   result_summary: string | null;
   changed_paths: string[] | null;
@@ -767,13 +778,37 @@ async function finalizeJob(job: JobStatus, creditsDeducted: number) {
       streamingText: "",
       buildSteps: [],
       activeJobId: null,
+      jobStartedAt: null,
     });
+  }
+}
+
+/** Pull the latest server-persisted files into the panel/preview mid-build. */
+async function refreshFilesLive() {
+  const { projectId } = useWorkspaceStore.getState();
+  try {
+    const res = await fetch(`/api/builder/files?projectId=${encodeURIComponent(projectId)}`);
+    if (!res.ok) return;
+    const { files } = (await res.json()) as { files: ProjectFile[] };
+    if (files?.length) {
+      useWorkspaceStore.setState((s) => ({
+        projectFiles: files,
+        // Only remount the preview when the file SET changes; content-only
+        // updates flow through Sandpack live without a jarring reload.
+        viewerKey:
+          files.length !== s.projectFiles.length ? s.viewerKey + 1 : s.viewerKey,
+      }));
+    }
+  } catch {
+    /* best-effort */
   }
 }
 
 /** Poll a background job until it reaches a terminal state. */
 function watchJob(jobId: string, creditsDeducted: number) {
   if (jobPollTimer) clearTimeout(jobPollTimer);
+
+  let lastStepCount = -1;
 
   const poll = async () => {
     // The user may have navigated to another project — stop watching.
@@ -787,6 +822,38 @@ function watchJob(jobId: string, creditsDeducted: number) {
             buildSteps: (job.steps ?? []) as BuildStep[],
             phase: jobPhase(job.status),
           });
+
+          // The runner persists files after every pass — refresh the file panel
+          // and preview LIVE whenever new steps landed (files likely changed).
+          const stepCount = (job.steps ?? []).length;
+          const ACTIVE_STATUSES = ["queued", "thinking", "writing", "verifying", "repairing", "applying"];
+          if (ACTIVE_STATUSES.includes(job.status) && stepCount !== lastStepCount) {
+            lastStepCount = stepCount;
+            void refreshFilesLive();
+          }
+
+          // Dead-worker detection: the runner heartbeats updated_at at least
+          // every ~20s while generating. If nothing has moved for 2+ minutes,
+          // the worker died — everything saved so far is kept.
+          if (
+            ACTIVE_STATUSES.includes(job.status) &&
+            job.updated_at &&
+            Date.now() - new Date(job.updated_at).getTime() > 120_000
+          ) {
+            await refreshFilesLive();
+            appendAssistant(
+              'The build worker went quiet — everything generated so far has been saved. Say "continue the build" to finish the rest.',
+            );
+            useWorkspaceStore.setState({
+              isBuilding: false,
+              phase: "idle",
+              streamingText: "",
+              buildSteps: [],
+              activeJobId: null,
+              jobStartedAt: null,
+            });
+            return;
+          }
           if (job.status === "done") {
             await finalizeJob(job, creditsDeducted || job.credits_deducted || 0);
             return;
@@ -801,6 +868,7 @@ function watchJob(jobId: string, creditsDeducted: number) {
               streamingText: "",
               buildSteps: [],
               activeJobId: null,
+              jobStartedAt: null,
             });
             return;
           }
@@ -814,6 +882,7 @@ function watchJob(jobId: string, creditsDeducted: number) {
               streamingText: "",
               buildSteps: [],
               activeJobId: null,
+              jobStartedAt: null,
             });
             return;
           }

@@ -165,19 +165,33 @@ export async function runBuildJob(jobId: string): Promise<void> {
         content: m.content,
       }));
 
-      const res = await completeAstraText(
-        [
-          { role: "system", content: system },
-          ...history,
-          {
-            role: "user" as const,
-            content: `${contextPack}\n\n---\n\n## Request\n${job.prompt}${
-              repairNote ? `\n\n## Continue/repair\n${repairNote}` : ""
-            }`,
-          },
-        ],
-        { maxTokens: MAX_OUTPUT_TOKENS, reasoningEffort: "high" },
-      );
+      // Heartbeat while the model generates (can run for minutes) so the client
+      // can distinguish "still working" from a dead worker.
+      const heartbeat = setInterval(() => {
+        void supabase
+          .from("build_jobs")
+          .update({ updated_at: new Date().toISOString() })
+          .eq("id", jobId);
+      }, 20_000);
+
+      let res;
+      try {
+        res = await completeAstraText(
+          [
+            { role: "system", content: system },
+            ...history,
+            {
+              role: "user" as const,
+              content: `${contextPack}\n\n---\n\n## Request\n${job.prompt}${
+                repairNote ? `\n\n## Continue/repair\n${repairNote}` : ""
+              }`,
+            },
+          ],
+          { maxTokens: MAX_OUTPUT_TOKENS, reasoningEffort: "high" },
+        );
+      } finally {
+        clearInterval(heartbeat);
+      }
       if (!res.ok) throw new Error(`${res.status}: ${res.detail}`);
       usage.input += res.usage?.inputTokens ?? 0;
       usage.output += res.usage?.outputTokens ?? 0;
@@ -246,6 +260,17 @@ export async function runBuildJob(jobId: string): Promise<void> {
       }
 
       files = applyPatchPlan(files, plan);
+
+      // Persist progress after EVERY pass (stubbed so the app always runs) —
+      // a refresh mid-build shows the files generated so far, and a dead
+      // worker never loses completed work.
+      await saveProjectFiles(
+        supabase,
+        job.user_id,
+        job.project_id,
+        stubDanglingImports(files).files,
+      );
+
       const issues = detectFatalIssues(plan, files, firstBuild && pass === 0);
       const missingApp = firstBuild && !appWritten;
 

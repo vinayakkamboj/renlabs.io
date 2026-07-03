@@ -26,7 +26,7 @@ export async function GET(_req: NextRequest, { params }: Params) {
   const { data } = await supabase
     .from("build_jobs")
     .select(
-      "id, status, steps, result_summary, changed_paths, error, created_at, completed_at, input_tokens, output_tokens, credits_deducted",
+      "id, status, steps, result_summary, changed_paths, error, created_at, updated_at, completed_at, input_tokens, output_tokens, credits_deducted",
     )
     .eq("id", id)
     .maybeSingle();

@@ -107,7 +107,7 @@ export async function GET(req: NextRequest) {
   const { data } = await supabase
     .from("build_jobs")
     .select(
-      "id, status, steps, result_summary, changed_paths, error, prompt, created_at, completed_at, input_tokens, output_tokens, credits_deducted",
+      "id, status, steps, result_summary, changed_paths, error, prompt, created_at, updated_at, completed_at, input_tokens, output_tokens, credits_deducted",
     )
     .eq("project_id", projectId)
     .order("created_at", { ascending: false })
