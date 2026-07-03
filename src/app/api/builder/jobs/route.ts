@@ -47,6 +47,41 @@ export async function POST(req: NextRequest) {
   } = await supabase.auth.getUser();
   if (!user) return Response.json({ error: "auth_required" }, { status: 401 });
 
+  // ── Idempotency guard ──────────────────────────────────────────────────────
+  // One live build per project. If a job is already running (e.g. the user
+  // reloaded and resent, or double-clicked), reattach to it instead of
+  // creating — and charging for — a duplicate. Runs BEFORE the credit gate so
+  // a reattach never costs credits. A job whose heartbeat has been silent for
+  // 2.5+ minutes is dead — mark it failed and allow a fresh build.
+  const ACTIVE_STATUSES = ["queued", "thinking", "writing", "verifying", "repairing", "applying"];
+  const { data: existing } = await supabase
+    .from("build_jobs")
+    .select("id, status, updated_at")
+    .eq("project_id", body.projectId)
+    .in("status", ACTIVE_STATUSES)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (existing) {
+    const silentMs = existing.updated_at
+      ? Date.now() - new Date(existing.updated_at).getTime()
+      : Infinity;
+    if (silentMs < 150_000) {
+      return Response.json({
+        ok: true,
+        jobId: existing.id,
+        existing: true,
+        creditsDeducted: 0,
+        creditsBalance: null,
+      });
+    }
+    await supabase
+      .from("build_jobs")
+      .update({ status: "error", error: "Build worker went silent.", completed_at: new Date().toISOString() })
+      .eq("id", existing.id);
+  }
+
   // Same credit gate as the streaming path — atomic, server-side.
   const deduct = await deductBuildCredits(user.id, "v1", body.projectId);
   if (!deduct.ok) {

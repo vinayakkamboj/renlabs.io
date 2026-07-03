@@ -301,7 +301,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   sendMessage: async (text, images) => {
     const trimmed = text.trim();
-    if ((!trimmed && !images?.length) || get().isBuilding) return;
+    if ((!trimmed && !images?.length) || get().isBuilding || get().activeJobId) return;
 
     // Fresh abort controller for this run; stopBuild() aborts it.
     const controller = new AbortController();
@@ -344,15 +344,22 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         if (jobRes.ok) {
           const d = (await jobRes.json()) as {
             jobId: string;
+            existing?: boolean;
             creditsDeducted?: number;
             creditsBalance?: number | null;
           };
           if (typeof d.creditsBalance === "number") set({ creditsBalance: d.creditsBalance });
+          if (d.existing) {
+            // A build for this project is already running server-side — we
+            // reattached instead of starting (and paying for) a duplicate.
+            // Drop the just-added prompt bubble; the original send has one.
+            set((s2) => ({ messages: s2.messages.slice(0, -1) }));
+          }
           set({
             activeJobId: d.jobId,
             phase: "thinking",
             buildSteps: [],
-            jobStartedAt: Date.now(),
+            jobStartedAt: d.existing ? null : Date.now(),
           });
           watchJob(d.jobId, d.creditsDeducted ?? 0);
           return; // the job watcher owns completion from here
@@ -818,10 +825,13 @@ function watchJob(jobId: string, creditsDeducted: number) {
       if (res.ok) {
         const { job } = (await res.json()) as { job: JobStatus | null };
         if (job) {
-          useWorkspaceStore.setState({
+          useWorkspaceStore.setState((s2) => ({
             buildSteps: (job.steps ?? []) as BuildStep[],
             phase: jobPhase(job.status),
-          });
+            jobStartedAt:
+              s2.jobStartedAt ??
+              (job.created_at ? new Date(job.created_at).getTime() : Date.now()),
+          }));
 
           // The runner persists files after every pass — refresh the file panel
           // and preview LIVE whenever new steps landed (files likely changed).
