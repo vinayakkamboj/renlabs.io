@@ -33,6 +33,10 @@ function mapAgent(r: any): Agent {
     lastRunAt: r.last_run_at ?? null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
+    loopEnabled: r.loop_enabled ?? false,
+    rateTokensPerMin: r.rate_tokens_per_min ?? 1500,
+    nextRunAt: r.next_run_at ?? null,
+    consecutiveFailures: r.consecutive_failures ?? 0,
   };
 }
 
@@ -205,6 +209,11 @@ export interface DeployAgentInput {
   goal?: string;
   schedule?: AgentSchedule;
   budgetCents?: number;
+  /** Start this agent looping ambiently right away (default: off — an agent
+   *  never spends unattended until the owner explicitly turns it on). */
+  loopEnabled?: boolean;
+  /** Burn-rate cap in tokens/minute. Lower = slower, cheaper, safer. */
+  rateTokensPerMin?: number;
 }
 
 /**
@@ -232,6 +241,9 @@ export async function deployAgent(input: DeployAgentInput): Promise<{ ok: boolea
       schedule: input.schedule ?? "manual",
       budget_cents: input.budgetCents ?? 0,
       permissions: preset?.permissions ?? [],
+      loop_enabled: input.loopEnabled ?? false,
+      rate_tokens_per_min: input.rateTokensPerMin ?? 1500,
+      next_run_at: input.loopEnabled ? new Date().toISOString() : null,
     })
     .select("id, name")
     .single();
@@ -279,6 +291,55 @@ export async function setAgentStatus(
     agentId,
     kind: "agent_status",
     message: `${data.name} is now ${status}.`,
+  });
+
+  revalidatePath("/dashboard/agents");
+  revalidatePath(`/dashboard/agents/${agentId}`);
+  return { ok: true };
+}
+
+/**
+ * Turn an agent's ambient loop on/off, and optionally set its burn-rate cap
+ * (tokens/minute — lower means slower and cheaper). Enabling clears the
+ * failure counter and schedules an immediate first cycle; disabling stops the
+ * scheduler from picking it up again until re-enabled.
+ */
+export async function setAgentLoop(
+  agentId: string,
+  loopEnabled: boolean,
+  rateTokensPerMin?: number,
+): Promise<{ ok: boolean }> {
+  if (!isSupabaseConfigured()) return { ok: false };
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false };
+
+  const { data, error } = await supabase
+    .from("agents")
+    .update({
+      loop_enabled: loopEnabled,
+      ...(rateTokensPerMin ? { rate_tokens_per_min: Math.max(200, rateTokensPerMin) } : {}),
+      ...(loopEnabled
+        ? { next_run_at: new Date().toISOString(), consecutive_failures: 0 }
+        : {}),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", agentId)
+    .eq("user_id", user.id)
+    .select("name, project_id")
+    .single();
+
+  if (error || !data) return { ok: false };
+
+  await logActivity({
+    projectId: data.project_id,
+    agentId,
+    kind: "agent_status",
+    message: loopEnabled
+      ? `${data.name} started looping ambiently on the ren branch.`
+      : `${data.name}'s ambient loop was stopped.`,
   });
 
   revalidatePath("/dashboard/agents");

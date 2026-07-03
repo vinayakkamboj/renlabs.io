@@ -61,7 +61,8 @@ export default async function WorkspacePage({ params }: PageProps) {
     supabase
       .from("project_files")
       .select("path, content")
-      .eq("project_id", id),
+      .eq("project_id", id)
+      .eq("branch", "main"),
   ]);
 
   const project = projectResult.data;

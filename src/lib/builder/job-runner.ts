@@ -107,6 +107,7 @@ async function loadProjectFiles(supabase: Supa, projectId: string): Promise<Proj
     .from("project_files")
     .select("path, content")
     .eq("project_id", projectId)
+    .eq("branch", "main")
     .order("path");
   return (data ?? []) as ProjectFile[];
 }
@@ -122,9 +123,10 @@ async function saveProjectFiles(
     project_id: projectId,
     path: f.path,
     content: f.content,
+    branch: "main",
     updated_at: new Date().toISOString(),
   }));
-  await supabase.from("project_files").upsert(rows, { onConflict: "project_id,path" });
+  await supabase.from("project_files").upsert(rows, { onConflict: "project_id,path,branch" });
 }
 
 /** Fire-and-forget the next pass as a fresh invocation. */

@@ -1,4 +1,5 @@
 import { Hero } from "@/components/site/hero";
+import { AmbientAgentsSection } from "@/components/site/ambient-agents-section";
 import { WorkflowsSection } from "@/components/site/workflows-section";
 import { ResearchModelSection } from "@/components/site/research-model-section";
 import { PhilosophySection } from "@/components/site/philosophy-section";
@@ -78,6 +79,7 @@ export default function HomePage() {
   return (
     <>
       <Hero />
+      <AmbientAgentsSection />
       <WorkflowsSection />
       {/* Positioning: benchmarks and the Astra model are infrastructure, not the
           lead message. Both sections are kept but gated off by default. */}

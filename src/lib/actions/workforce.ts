@@ -50,6 +50,10 @@ function mapAgent(r: any): Agent {
     lastRunAt: r.last_run_at ?? null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
+    loopEnabled: r.loop_enabled ?? false,
+    rateTokensPerMin: r.rate_tokens_per_min ?? 1500,
+    nextRunAt: r.next_run_at ?? null,
+    consecutiveFailures: r.consecutive_failures ?? 0,
   };
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
@@ -121,6 +125,7 @@ export async function getProjectWorkforce(
  */
 export async function fetchProjectFiles(
   projectId: string,
+  branch: "main" | "ren" = "main",
 ): Promise<ProjectFile[]> {
   if (!isSupabaseConfigured()) return [];
   const supabase = await createClient();
@@ -133,9 +138,81 @@ export async function fetchProjectFiles(
     .from("project_files")
     .select("path, content")
     .eq("project_id", projectId)
+    .eq("branch", branch)
     .order("path");
 
   return (data ?? []) as ProjectFile[];
+}
+
+export interface BranchDiffEntry {
+  path: string;
+  status: "added" | "modified" | "removed";
+  mainContent: string | null;
+  renContent: string | null;
+}
+
+/**
+ * Diff the ambient agents' working branch ('ren') against the live app
+ * ('main') — what they've changed so the owner can review before promoting.
+ * Never applies anything; purely read-only.
+ */
+export async function getAgentBranchDiff(projectId: string): Promise<BranchDiffEntry[]> {
+  const [mainFiles, renFiles] = await Promise.all([
+    fetchProjectFiles(projectId, "main"),
+    fetchProjectFiles(projectId, "ren"),
+  ]);
+  const mainByPath = new Map(mainFiles.map((f) => [f.path, f.content]));
+  const renByPath = new Map(renFiles.map((f) => [f.path, f.content]));
+
+  const diffs: BranchDiffEntry[] = [];
+  for (const [path, renContent] of renByPath) {
+    const mainContent = mainByPath.get(path) ?? null;
+    if (mainContent === null) {
+      diffs.push({ path, status: "added", mainContent: null, renContent });
+    } else if (mainContent !== renContent) {
+      diffs.push({ path, status: "modified", mainContent, renContent });
+    }
+  }
+  return diffs.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/**
+ * Promote the agents' 'ren' branch onto 'main' — the ONE point where ambient
+ * agent work becomes the live app. Requires explicit owner action; agents
+ * themselves never call this. Only the files that actually differ are copied,
+ * so unrelated main-branch history (e.g. edits made in the workspace chat
+ * since the agents last ran) is preserved.
+ */
+export async function promoteAgentBranch(
+  projectId: string,
+): Promise<{ ok: boolean; promoted: number; error?: string }> {
+  if (!isSupabaseConfigured()) {
+    return { ok: false, promoted: 0, error: "Supabase not configured." };
+  }
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, promoted: 0, error: "Not signed in." };
+
+  const diffs = await getAgentBranchDiff(projectId);
+  if (!diffs.length) return { ok: true, promoted: 0 };
+
+  const rows = diffs.map((d) => ({
+    user_id: user.id,
+    project_id: projectId,
+    path: d.path,
+    content: d.renContent ?? "",
+    branch: "main",
+    updated_at: new Date().toISOString(),
+  }));
+
+  const { error } = await supabase
+    .from("project_files")
+    .upsert(rows, { onConflict: "project_id,path,branch" });
+
+  if (error) return { ok: false, promoted: 0, error: error.message };
+  return { ok: true, promoted: rows.length };
 }
 
 /**

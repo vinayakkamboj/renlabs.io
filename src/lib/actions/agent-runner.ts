@@ -1,12 +1,13 @@
 "use server";
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { streamAstraText, type ChatMsg } from "@/lib/ai/astra";
+import { completeAstraText, type ChatMsg } from "@/lib/ai/astra";
 import {
   parseFilePatchPlan,
   applyPatchPlan,
   detectFatalIssues,
   describeFatalIssues,
+  stubDanglingImports,
 } from "@/lib/builder/file-patches";
 import { buildEditPrompt, buildRepairPrompt } from "@/lib/builder/prompts";
 import { logActivity, setTaskStatus } from "./agents";
@@ -154,6 +155,7 @@ async function loadContext(agentId: string, taskId?: string): Promise<AgentConte
     .from("project_files")
     .select("id, path, content, language")
     .eq("project_id", agentRow.project_id)
+    .eq("branch", "main")
     .order("path");
 
   if (filesError) return null;
@@ -177,6 +179,10 @@ async function loadContext(agentId: string, taskId?: string): Promise<AgentConte
       lastRunAt: agentRow.last_run_at,
       createdAt: agentRow.created_at,
       updatedAt: agentRow.updated_at,
+      loopEnabled: agentRow.loop_enabled ?? false,
+      rateTokensPerMin: agentRow.rate_tokens_per_min ?? 1500,
+      nextRunAt: agentRow.next_run_at ?? null,
+      consecutiveFailures: agentRow.consecutive_failures ?? 0,
     },
     project: {
       id: project.id,
@@ -198,19 +204,21 @@ async function saveFiles(
   supabase: ReturnType<typeof createAdminClient>,
 ): Promise<boolean> {
   try {
-    for (const file of files) {
-      await supabase.from("project_files").upsert(
-        {
-          user_id: userId,
-          project_id: projectId,
-          path: file.path,
-          content: file.content,
-          language: file.language || detectLanguage(file.path),
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "project_id,path" },
-      );
-    }
+    // Agents never write to main. Their work lands on the 'ren' branch, and
+    // the user promotes it to main explicitly after review — a bad cycle can
+    // never damage the live app.
+    const rows = files.map((file) => ({
+      user_id: userId,
+      project_id: projectId,
+      path: file.path,
+      content: file.content,
+      language: file.language || detectLanguage(file.path),
+      branch: "ren",
+      updated_at: new Date().toISOString(),
+    }));
+    await supabase
+      .from("project_files")
+      .upsert(rows, { onConflict: "project_id,path,branch" });
     return true;
   } catch {
     return false;
@@ -294,24 +302,31 @@ async function executeAgent(ctx: AgentContext): Promise<{
   plan: string;
   changedFiles: ProjectFile[];
   reportContent: string;
+  tokensUsed: number;
 }> {
   const isCodeRole = ["developer", "qa", "design", "ops"].includes(ctx.agent.role);
+  // Bounded per-cycle budget + explicit reasoning level — without these, GLM
+  // runs at max reasoning against a tiny default cap and produces nothing.
+  const OPTS = { maxTokens: 12_000, reasoningEffort: "high" } as const;
+  let tokensUsed = 0;
 
   if (!isCodeRole) {
     // Non-code roles: generate a report only
     const messages = await buildPrompt(ctx);
     const prompt = `${buildEditPrompt()}\n\nGenerate a markdown report (2-3 paragraphs) summarizing your assessment and recommendations for the ${ctx.project.name} project.`;
 
-    const result = await streamAstraText([{ ...messages[0], role: "user", content: prompt + "\n" + messages[0].content }]);
+    const result = await completeAstraText(
+      [{ ...messages[0], role: "user", content: prompt + "\n" + messages[0].content }],
+      { maxTokens: 2_500, reasoningEffort: "high" },
+    );
     if (!result.ok) throw new Error(`Astra error: ${result.detail}`);
-
-    // Drain stream to string
-    const content = await drainStream(result.stream);
+    tokensUsed += (result.usage?.inputTokens ?? 0) + (result.usage?.outputTokens ?? 0);
 
     return {
       plan: "Report generated",
       changedFiles: [],
-      reportContent: content,
+      reportContent: result.text,
+      tokensUsed,
     };
   }
 
@@ -319,22 +334,21 @@ async function executeAgent(ctx: AgentContext): Promise<{
   const messages = await buildPrompt(ctx);
   const systemPrompt = buildEditPrompt();
 
-  const response = await streamAstraText([
-    { role: "system", content: systemPrompt },
-    ...messages,
-  ]);
-
+  const response = await completeAstraText(
+    [{ role: "system", content: systemPrompt }, ...messages],
+    OPTS,
+  );
   if (!response.ok) throw new Error(`Astra error: ${response.detail}`);
-
-  let content = await drainStream(response.stream);
+  tokensUsed += (response.usage?.inputTokens ?? 0) + (response.usage?.outputTokens ?? 0);
 
   // Parse and validate
-  let plan = parseFilePatchPlan(content);
+  let plan = parseFilePatchPlan(response.text);
   if (!plan) {
     return {
       plan: "No file changes detected",
       changedFiles: [],
       reportContent: "The agent did not produce any file changes.",
+      tokensUsed,
     };
   }
 
@@ -350,11 +364,12 @@ async function executeAgent(ctx: AgentContext): Promise<{
       ...messages,
     ];
 
-    const repairResult = await streamAstraText(repairMessages);
+    const repairResult = await completeAstraText(repairMessages, OPTS);
     if (!repairResult.ok) throw new Error(`Repair failed: ${repairResult.detail}`);
+    tokensUsed +=
+      (repairResult.usage?.inputTokens ?? 0) + (repairResult.usage?.outputTokens ?? 0);
 
-    content = await drainStream(repairResult.stream);
-    plan = parseFilePatchPlan(content);
+    plan = parseFilePatchPlan(repairResult.text);
     if (!plan) throw new Error("Repair produced no valid patches");
 
     const repaired = applyPatchPlan(ctx.files, plan);
@@ -363,15 +378,17 @@ async function executeAgent(ctx: AgentContext): Promise<{
 
     return {
       plan: plan.plan,
-      changedFiles: repaired,
+      changedFiles: stubDanglingImports(repaired).files,
       reportContent: `Repaired and applied changes:\n${plan.plan}`,
+      tokensUsed,
     };
   }
 
   return {
     plan: plan.plan,
-    changedFiles: modified,
+    changedFiles: stubDanglingImports(modified).files,
     reportContent: `Applied changes:\n${plan.plan}`,
+    tokensUsed,
   };
 }
 
@@ -394,10 +411,13 @@ async function reflectAndQueueTasks(
     },
   ];
 
-  const result = await streamAstraText(messages);
+  const result = await completeAstraText(messages, {
+    maxTokens: 400,
+    reasoningEffort: "high",
+  });
   if (!result.ok) return [];
 
-  const content = await drainStream(result.stream);
+  const content = result.text;
 
   // Extract JSON array
   let tasks: string[] = [];
@@ -433,23 +453,6 @@ async function reflectAndQueueTasks(
   return createdIds;
 }
 
-async function drainStream(stream: ReadableStream<Uint8Array>): Promise<string> {
-  const reader = stream.getReader();
-  const chunks: string[] = [];
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(new TextDecoder().decode(value));
-    }
-  } finally {
-    reader.releaseLock();
-  }
-
-  return chunks.join("");
-}
-
 /**
  * Execute one autonomous run of an agent: pick a task, make code/report changes,
  * queue follow-up work, and persist everything.
@@ -482,6 +485,11 @@ export async function runAgentTask(
     // budget caps how much of that balance this one agent may spend.
     const cost = CREDITS_PER_AGENT_RUN;
     if (ctx.agent.budgetCents > 0 && ctx.agent.spentCents + cost > ctx.agent.budgetCents) {
+      // Out of budget: stop the ambient loop too, so it doesn't spin on refusals.
+      await ctx.supabase
+        .from("agents")
+        .update({ loop_enabled: false })
+        .eq("id", ctx.agent.id);
       return {
         ok: false,
         error:
@@ -503,7 +511,7 @@ export async function runAgentTask(
     const creditsBalance = "skipped" in charge ? undefined : charge.balance;
 
     // Execute
-    const { plan, changedFiles, reportContent } = await executeAgent(ctx);
+    const { plan, changedFiles, reportContent, tokensUsed } = await executeAgent(ctx);
 
     // Save files
     if (changedFiles.length > 0) {
@@ -538,16 +546,24 @@ export async function runAgentTask(
     // Reflect and queue follow-ups
     const followUpIds = await reflectAndQueueTasks(ctx, changedFiles);
 
-    // Update agent lastRunAt, memory, and the running credit spend total.
+    // Update agent lastRunAt, memory, spend — and the burn-rate schedule.
+    // rate_tokens_per_min is the throttle: an agent that used 6k tokens at a
+    // 2k/min rate sleeps ~3 minutes before its next ambient cycle. Successful
+    // cycles reset the failure counter.
+    const rate = Math.max(200, ctx.agent.rateTokensPerMin);
+    const delayMinutes = Math.max(1, Math.ceil(tokensUsed / rate));
     await ctx.supabase
       .from("agents")
       .update({
         last_run_at: new Date().toISOString(),
         spent_cents: ctx.agent.spentCents + creditsSpent,
+        next_run_at: new Date(Date.now() + delayMinutes * 60_000).toISOString(),
+        consecutive_failures: 0,
         memory: {
           lastTask: ctx.task?.id,
           lastChangedFiles: changedFiles.map((f) => f.path),
           lastReportId: reportId,
+          lastTokensUsed: tokensUsed,
         },
       })
       .eq("id", ctx.agent.id);
@@ -571,6 +587,27 @@ export async function runAgentTask(
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    // Track consecutive failures; three in a row pauses the ambient loop so a
+    // stuck agent can't burn tokens repeating the same mistake.
+    try {
+      const supabase = createAdminClient();
+      const { data } = await supabase
+        .from("agents")
+        .select("consecutive_failures")
+        .eq("id", agentId)
+        .single();
+      const failures = ((data?.consecutive_failures as number) ?? 0) + 1;
+      await supabase
+        .from("agents")
+        .update({
+          consecutive_failures: failures,
+          next_run_at: new Date(Date.now() + 5 * 60_000).toISOString(),
+          ...(failures >= 3 ? { loop_enabled: false, status: "paused" } : {}),
+        })
+        .eq("id", agentId);
+    } catch {
+      /* accounting is best-effort */
+    }
     return { ok: false, error: msg };
   }
 }

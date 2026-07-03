@@ -1,34 +1,47 @@
 "use client";
 
 /**
- * Agents view — the autonomous team working on THIS project, shown right inside
- * the workspace. For each agent you see who they are, their live status, and
- * what they've actually contributed (files touched, reports written, tasks
- * completed). The "Auto-improve" loop runs the team continuously: each tick
- * runs every active agent once (it tests the build, thinks about what to do
- * next, and applies improvements), pulls their edits into the live preview, and
- * refreshes their contributions — over and over until you stop it.
+ * Agents view — the autonomous team working on THIS project, shown right
+ * inside the workspace.
+ *
+ * Agents don't loop in this browser tab anymore — they're AMBIENT: a
+ * server-side cron scheduler (`/api/cron/agents`) ticks every few minutes and
+ * runs any agent whose loop is on and whose burn-rate clock says it's due.
+ * That keeps working even if you close this tab or your laptop. Each agent's
+ * own rate_tokens_per_min throttle decides how fast it's allowed to spend —
+ * turning it down makes it slower and cheaper, never faster than the cap.
+ *
+ * Safety: every ambient edit lands on the project's 'ren' branch, never on
+ * 'main' (what the live preview and your manual chat builds use). Nothing an
+ * agent writes reaches the real app until you review the diff here and hit
+ * Promote — one explicit action, one point of human review.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Bot,
   CheckCircle2,
+  ExternalLink,
   FileText,
+  GitBranch,
   ListTodo,
   Loader2,
+  Pause,
+  Play,
   Sparkles,
-  Square,
   Users,
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
   getProjectWorkforce,
-  fetchProjectFiles,
   deployStarterTeam,
+  getAgentBranchDiff,
+  promoteAgentBranch,
   type AgentContributionSummary,
+  type BranchDiffEntry,
 } from "@/lib/actions/workforce";
+import { setAgentLoop } from "@/lib/actions/agents";
 import { ROLE_PRESETS } from "@/lib/data/agents";
 import { AgentStatusBadge } from "@/components/platform/agent-controls";
 import { useWorkspaceStore } from "@/lib/builder/store";
@@ -47,33 +60,40 @@ interface LogEntry {
   time: string;
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+// Presets shown for the burn-rate slider — tokens/minute the ambient loop is
+// allowed to spend for one agent. Lower = slower and cheaper.
+const RATE_PRESETS = [
+  { label: "Slow", value: 800 },
+  { label: "Normal", value: 1500 },
+  { label: "Fast", value: 3500 },
+] as const;
 
 export function AgentWorkspace({ projectId, projectName }: Props) {
   const [workforce, setWorkforce] = useState<AgentContributionSummary[]>([]);
+  const [diffs, setDiffs] = useState<BranchDiffEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [deploying, setDeploying] = useState(false);
-  const [looping, setLooping] = useState(false);
+  const [promoting, setPromoting] = useState(false);
   const [runningId, setRunningId] = useState<string | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
   const [log, setLog] = useState<LogEntry[]>([]);
 
-  // Refs the loop reads so it always sees the latest state without restarting.
-  const loopingRef = useRef(false);
-  const workforceRef = useRef<AgentContributionSummary[]>([]);
-  workforceRef.current = workforce;
-
   const refresh = useCallback(async () => {
-    const data = await getProjectWorkforce(projectId);
-    setWorkforce(data);
-    return data;
+    const [team, diff] = await Promise.all([
+      getProjectWorkforce(projectId),
+      getAgentBranchDiff(projectId),
+    ]);
+    setWorkforce(team);
+    setDiffs(diff);
+    return team;
   }, [projectId]);
 
   useEffect(() => {
     refresh().finally(() => setLoading(false));
-    // Stop the loop if the view unmounts.
-    return () => {
-      loopingRef.current = false;
-    };
+    // Ambient agents run server-side (cron), but poll while this view is open
+    // so newly-landed work shows up without a manual refresh.
+    const t = setInterval(() => void refresh(), 15_000);
+    return () => clearInterval(t);
   }, [refresh]);
 
   function pushLog(entry: Omit<LogEntry, "id" | "time">) {
@@ -112,8 +132,9 @@ export function AgentWorkspace({ projectId, projectName }: Props) {
     }
   }
 
-  /** Run one agent once; on success, pull its edits into the live preview. */
-  async function runOne(agentId: string, agentName: string): Promise<void> {
+  /** Manual one-off run — useful for testing an agent without turning its
+   *  ambient loop on. Still writes to the 'ren' branch, same as the loop. */
+  async function runOnce(agentId: string, agentName: string): Promise<void> {
     setRunningId(agentId);
     try {
       const res = await fetch("/api/agents/run", {
@@ -135,7 +156,6 @@ export function AgentWorkspace({ projectId, projectName }: Props) {
         if (data.filesChanged) bits.push(`${data.filesChanged} file${data.filesChanged > 1 ? "s" : ""}`);
         if (data.followUpTasks) bits.push(`${data.followUpTasks} follow-up${data.followUpTasks > 1 ? "s" : ""}`);
         if (data.creditsSpent) bits.push(`−${data.creditsSpent} credits`);
-        // Keep the workspace credit readout in sync with agent spend.
         if (typeof data.creditsBalance === "number") {
           useWorkspaceStore.getState().setCreditsBalance(data.creditsBalance);
         }
@@ -146,11 +166,7 @@ export function AgentWorkspace({ projectId, projectName }: Props) {
             (data.plan?.trim() || "Improved the project") +
             (bits.length ? ` · ${bits.join(", ")}` : ""),
         });
-        // Reflect the agent's server-side edits in the preview.
-        if (data.filesChanged) {
-          const files = await fetchProjectFiles(projectId);
-          if (files.length) useWorkspaceStore.getState().replaceFiles(files);
-        }
+        await refresh();
       } else {
         pushLog({ kind: "error", agent: agentName, text: data.error ?? "Run failed" });
       }
@@ -161,47 +177,59 @@ export function AgentWorkspace({ projectId, projectName }: Props) {
     }
   }
 
-  async function loop() {
-    while (loopingRef.current) {
-      const active = workforceRef.current.filter((w) => w.agent.status !== "paused");
-      if (!active.length) {
-        pushLog({ kind: "info", agent: "Team", text: "No active agents — stopping." });
-        break;
-      }
-      for (const w of active) {
-        if (!loopingRef.current) break;
-        await runOne(w.agent.id, w.agent.name);
+  async function toggleLoop(agentId: string, agentName: string, enable: boolean) {
+    setTogglingId(agentId);
+    try {
+      const res = await setAgentLoop(agentId, enable);
+      if (res.ok) {
+        pushLog({
+          kind: "info",
+          agent: agentName,
+          text: enable
+            ? "Started looping ambiently on the ren branch."
+            : "Ambient loop stopped.",
+        });
         await refresh();
-        if (!loopingRef.current) break;
+      } else {
+        toast.error("Could not update the loop.");
       }
-      if (!loopingRef.current) break;
-      // Breathe between rounds so the loop is observable and not a hot spin.
-      await sleep(2000);
+    } finally {
+      setTogglingId(null);
     }
-    loopingRef.current = false;
-    setLooping(false);
-    setRunningId(null);
   }
 
-  function startLoop() {
-    if (loopingRef.current) return;
-    if (!workforceRef.current.some((w) => w.agent.status !== "paused")) {
-      toast.error("Deploy a team first, then start the loop.");
-      return;
+  async function setRate(agentId: string, agentName: string, rate: number) {
+    await setAgentLoop(agentId, true, rate);
+    pushLog({ kind: "info", agent: agentName, text: `Burn rate set to ${rate} tokens/min.` });
+    await refresh();
+  }
+
+  async function promote() {
+    setPromoting(true);
+    try {
+      const res = await promoteAgentBranch(projectId);
+      if (res.ok) {
+        toast.success(
+          res.promoted
+            ? `Promoted ${res.promoted} file${res.promoted > 1 ? "s" : ""} from ren to main.`
+            : "Nothing to promote.",
+        );
+        pushLog({ kind: "info", agent: "You", text: `Promoted ${res.promoted} file(s) to main.` });
+        // Pull the newly-promoted main files into the live workspace.
+        const res2 = await fetch(`/api/builder/files?projectId=${encodeURIComponent(projectId)}`);
+        const { files } = (await res2.json()) as { files: { path: string; content: string }[] };
+        if (files?.length) useWorkspaceStore.getState().replaceFiles(files);
+        await refresh();
+      } else {
+        toast.error(res.error ?? "Could not promote.");
+      }
+    } finally {
+      setPromoting(false);
     }
-    loopingRef.current = true;
-    setLooping(true);
-    pushLog({ kind: "info", agent: "Team", text: "Auto-improve started." });
-    void loop();
   }
 
-  function stopLoop() {
-    loopingRef.current = false;
-    setLooping(false);
-    pushLog({ kind: "info", agent: "Team", text: "Auto-improve stopped." });
-  }
+  const anyLooping = workforce.some((w) => w.agent.loopEnabled);
 
-  // ── Render ──────────────────────────────────────────────────────────────────
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center bg-carbon text-[13px] text-dusk-faint">
@@ -221,31 +249,16 @@ export function AgentWorkspace({ projectId, projectName }: Props) {
           <span className="text-[11.5px] text-dusk-faint">
             {workforce.length} agent{workforce.length === 1 ? "" : "s"}
           </span>
-        </div>
-        <div className="flex items-center gap-2">
-          {workforce.length > 0 && (
-            <button
-              onClick={looping ? stopLoop : startLoop}
-              className={cn(
-                "flex h-8 items-center gap-2 rounded-lg px-3.5 text-[12px] font-medium transition-colors",
-                looping
-                  ? "bg-signal-red/15 text-signal-red hover:bg-signal-red/25"
-                  : "bg-brass text-carbon hover:bg-brass-deep",
-              )}
-            >
-              {looping ? (
-                <>
-                  <Square className="size-3.5" />
-                  Stop loop
-                </>
-              ) : (
-                <>
-                  <Zap className="size-3.5" />
-                  Auto-improve
-                </>
-              )}
-            </button>
+          {anyLooping && (
+            <span className="flex items-center gap-1.5 rounded-full bg-brass/15 px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-brass">
+              <span className="size-1.5 animate-pulse rounded-full bg-brass" />
+              Ambient
+            </span>
           )}
+        </div>
+        <div className="flex items-center gap-2 font-mono text-[10.5px] text-dusk-faint">
+          <GitBranch className="size-3" />
+          working on <span className="text-dusk-muted">ren</span>
         </div>
       </div>
 
@@ -255,9 +268,24 @@ export function AgentWorkspace({ projectId, projectName }: Props) {
         <div className="flex min-h-0 flex-1">
           {/* Agent cards */}
           <div className="min-w-0 flex-1 overflow-y-auto p-4">
+            {diffs.length > 0 && (
+              <BranchReviewBanner
+                diffs={diffs}
+                onPromote={promote}
+                promoting={promoting}
+              />
+            )}
             <div className="grid gap-3">
               {workforce.map((w) => (
-                <AgentCard key={w.agent.id} summary={w} running={runningId === w.agent.id} />
+                <AgentCard
+                  key={w.agent.id}
+                  summary={w}
+                  running={runningId === w.agent.id}
+                  toggling={togglingId === w.agent.id}
+                  onRunOnce={() => runOnce(w.agent.id, w.agent.name)}
+                  onToggleLoop={(on) => toggleLoop(w.agent.id, w.agent.name, on)}
+                  onSetRate={(rate) => setRate(w.agent.id, w.agent.name, rate)}
+                />
               ))}
             </div>
           </div>
@@ -265,15 +293,15 @@ export function AgentWorkspace({ projectId, projectName }: Props) {
           {/* Live activity log */}
           <div className="flex w-72 shrink-0 flex-col border-l border-carbon-line">
             <div className="flex h-9 shrink-0 items-center gap-2 border-b border-carbon-line px-3.5">
-              <Sparkles className={cn("size-3.5", looping ? "animate-pulse text-brass" : "text-dusk-faint")} />
+              <Sparkles className={cn("size-3.5", anyLooping ? "animate-pulse text-brass" : "text-dusk-faint")} />
               <span className="text-[11.5px] font-medium text-dusk-muted">Live activity</span>
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-3">
               {log.length === 0 ? (
                 <p className="px-1 py-6 text-center text-[11.5px] leading-relaxed text-dusk-faint">
-                  Press <span className="text-brass">Auto-improve</span> and the team
-                  starts working in a loop — testing, thinking, and shipping
-                  improvements. Their progress shows up here.
+                  Turn on an agent&apos;s <span className="text-brass">loop</span> and
+                  it works ambiently in the background — even if you close this
+                  tab. Progress and promotions show up here.
                 </p>
               ) : (
                 <ul className="space-y-2">
@@ -310,29 +338,82 @@ export function AgentWorkspace({ projectId, projectName }: Props) {
   );
 }
 
+function BranchReviewBanner({
+  diffs,
+  onPromote,
+  promoting,
+}: {
+  diffs: BranchDiffEntry[];
+  onPromote: () => void;
+  promoting: boolean;
+}) {
+  return (
+    <div className="mb-3 rounded-xl border border-brass/30 bg-brass/[0.06] p-3.5">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-[12.5px] font-medium text-dusk">
+          <GitBranch className="size-3.5 text-brass" />
+          {diffs.length} file{diffs.length > 1 ? "s" : ""} changed on{" "}
+          <span className="font-mono text-brass">ren</span> — not live yet
+        </div>
+        <button
+          onClick={onPromote}
+          disabled={promoting}
+          className="flex h-7 shrink-0 items-center gap-1.5 rounded-lg bg-brass px-3 text-[11.5px] font-medium text-carbon transition-colors hover:bg-brass-deep disabled:opacity-50"
+        >
+          {promoting ? <Loader2 className="size-3 animate-spin" /> : <ExternalLink className="size-3" />}
+          Promote to main
+        </button>
+      </div>
+      <ul className="mt-2.5 flex flex-wrap gap-1.5">
+        {diffs.slice(0, 8).map((d) => (
+          <li
+            key={d.path}
+            className="rounded-md bg-carbon-raised px-2 py-1 font-mono text-[10.5px] text-dusk-muted"
+            title={d.status}
+          >
+            {d.status === "added" ? "+" : "~"} {d.path.split("/").pop()}
+          </li>
+        ))}
+        {diffs.length > 8 && (
+          <li className="px-2 py-1 text-[10.5px] text-dusk-faint">+{diffs.length - 8} more</li>
+        )}
+      </ul>
+    </div>
+  );
+}
+
 function AgentCard({
   summary,
   running,
+  toggling,
+  onRunOnce,
+  onToggleLoop,
+  onSetRate,
 }: {
   summary: AgentContributionSummary;
   running: boolean;
+  toggling: boolean;
+  onRunOnce: () => void;
+  onToggleLoop: (on: boolean) => void;
+  onSetRate: (rate: number) => void;
 }) {
   const { agent } = summary;
   const Icon = ROLE_PRESETS[agent.role]?.icon ?? Bot;
   const role = ROLE_PRESETS[agent.role]?.label ?? agent.role;
+  const looping = agent.loopEnabled;
 
   return (
     <div
       className={cn(
         "rounded-xl border bg-carbon-raised p-4 transition-colors",
-        running ? "border-brass/50" : "border-carbon-line",
+        running ? "border-brass/50" : looping ? "border-brass/25" : "border-carbon-line",
       )}
     >
       <div className="flex items-center gap-3">
         <span
           className={cn(
             "flex size-9 shrink-0 items-center justify-center rounded-lg bg-carbon-high",
-            running && "ring-1 ring-brass/40",
+            (running || looping) && "ring-1 ring-brass/40",
           )}
         >
           {running ? (
@@ -364,6 +445,65 @@ function AgentCard({
           <Stat icon={<FileText className="size-3" />} label="files last run" value={summary.filesTouched.length} />
         )}
       </div>
+
+      {/* Ambient loop controls */}
+      <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-carbon-line pt-3">
+        <button
+          onClick={() => onToggleLoop(!looping)}
+          disabled={toggling}
+          className={cn(
+            "flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-medium transition-colors disabled:opacity-50",
+            looping
+              ? "bg-signal-red/15 text-signal-red hover:bg-signal-red/25"
+              : "bg-brass text-carbon hover:bg-brass-deep",
+          )}
+        >
+          {toggling ? (
+            <Loader2 className="size-3 animate-spin" />
+          ) : looping ? (
+            <Pause className="size-3" />
+          ) : (
+            <Play className="size-3" />
+          )}
+          {looping ? "Stop loop" : "Start loop"}
+        </button>
+
+        {looping && (
+          <div className="flex items-center gap-1">
+            {RATE_PRESETS.map((p) => (
+              <button
+                key={p.label}
+                onClick={() => onSetRate(p.value)}
+                className={cn(
+                  "rounded-md px-2 py-1 font-mono text-[10px] transition-colors",
+                  agent.rateTokensPerMin === p.value
+                    ? "bg-carbon-high text-brass"
+                    : "text-dusk-faint hover:text-dusk-muted",
+                )}
+                title={`${p.value} tokens/min`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <button
+          onClick={onRunOnce}
+          disabled={running}
+          className="ml-auto flex h-7 items-center gap-1.5 rounded-lg border border-carbon-line px-2.5 text-[11px] font-medium text-dusk-muted transition-colors hover:text-dusk disabled:opacity-50"
+        >
+          <Zap className="size-3" />
+          Run once
+        </button>
+      </div>
+
+      {agent.consecutiveFailures > 0 && (
+        <p className="mt-2 text-[10.5px] text-signal-amber">
+          {agent.consecutiveFailures} failed cycle{agent.consecutiveFailures > 1 ? "s" : ""} in a row
+          {agent.consecutiveFailures >= 3 ? " — loop auto-paused." : "."}
+        </p>
+      )}
 
       {/* What it improved — latest reports */}
       {summary.recentReports.length > 0 && (
@@ -418,10 +558,10 @@ function EmptyTeam({
         </span>
         <h3 className="mt-4 text-[15px] font-medium text-dusk">Put a team on {projectName}</h3>
         <p className="mx-auto mt-2 max-w-xs text-[12.5px] leading-relaxed text-dusk-muted">
-          Deploy an engineer, a QA agent, and a designer. Once they&apos;re in
-          place, hit Auto-improve and they&apos;ll work in a continuous loop —
-          testing the build, deciding what to do next, and shipping improvements
-          on their own.
+          Deploy an engineer, a QA agent, and a designer. Turn on their loop and
+          they work ambiently in the background — even with this tab closed —
+          on a separate <span className="font-mono text-dusk">ren</span> branch.
+          You review and promote their work whenever you&apos;re ready.
         </p>
         <button
           onClick={onDeploy}

@@ -32,7 +32,8 @@ export async function GET(req: NextRequest) {
     const { data } = await supabase
       .from("project_files")
       .select("path, content")
-      .eq("project_id", projectId);
+      .eq("project_id", projectId)
+      .eq("branch", "main");
 
     return Response.json({ files: (data ?? []) as ProjectFile[] });
   } catch {
@@ -65,11 +66,12 @@ export async function POST(req: NextRequest) {
       user_id: user.id,
       path: f.path,
       content: f.content,
+      branch: "main",
     }));
 
     await supabase
       .from("project_files")
-      .upsert(rows, { onConflict: "project_id,path" });
+      .upsert(rows, { onConflict: "project_id,path,branch" });
 
     return Response.json({ ok: true });
   } catch {

@@ -56,6 +56,17 @@ export interface Agent {
   lastRunAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** True when the agent runs ambiently (server-side cron) rather than only
+   *  on manual "Run" clicks — the "looping agent" mode. */
+  loopEnabled: boolean;
+  /** Burn-rate throttle: max tokens/minute this agent may spend. A cycle that
+   *  used more tokens sleeps proportionally longer before its next run. */
+  rateTokensPerMin: number;
+  /** When the ambient scheduler should next consider this agent (throttle +
+   *  backoff clock). Null means "due now" for a loop-enabled agent. */
+  nextRunAt: string | null;
+  /** Consecutive failed cycles — 3 in a row auto-pauses the loop. */
+  consecutiveFailures: number;
 }
 
 export interface AgentTask {
