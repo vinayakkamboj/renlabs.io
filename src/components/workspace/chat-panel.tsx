@@ -8,12 +8,9 @@ import {
   Gauge,
   ImagePlus,
   Layers,
-  Loader2,
-  ScanSearch,
   Sparkles,
   Square,
   Wand2,
-  Wrench,
   X,
 } from "lucide-react";
 import { RenMark } from "@/components/ui/wordmark";
@@ -21,7 +18,6 @@ import { MarkdownContent } from "@/components/ui/markdown";
 import { useWorkspaceStore } from "@/lib/builder/store";
 import { ASTRA_MODEL } from "@/lib/builder/model-tiers";
 import type { BuildMessage } from "@/lib/builder/types";
-import { cn } from "@/lib/utils";
 
 export function ChatPanel() {
   const messages = useWorkspaceStore((s) => s.messages);
@@ -99,7 +95,7 @@ export function ChatPanel() {
         )}
 
         {isBuilding && (
-          <BuildPipeline phase={phase} streamingText={streamingText} onStop={stopBuild} />
+          <BuildPipeline phase={phase} streamingText={streamingText} />
         )}
       </div>
 
@@ -196,21 +192,11 @@ export function ChatPanel() {
 }
 
 /**
- * Astra's live activity — a Claude-style feed of what the agent is doing right
- * now ("Astra is thinking", "writing files", "reading the code again"), fed by
- * the background job's step log. In legacy streaming mode (no job steps) it
- * shows the live stream text under the same header.
+ * Astra's live activity — Claude-style: no card, no chrome, no duplicate Stop
+ * (the composer already has one). Just a shimmering status line ("Astra is
+ * thinking…") with a subtle elapsed timer, the current step's detail beneath
+ * it, and the last few completed steps as faint lines above.
  */
-const STEP_ICON = {
-  thinking: Sparkles,
-  writing: FileCode2,
-  verifying: ScanSearch,
-  repairing: Wrench,
-  applying: Wand2,
-  info: Check,
-  error: X,
-} as const;
-
 const PHASE_HEADLINE: Record<string, string> = {
   thinking: "Astra is thinking",
   writing: "Astra is writing files",
@@ -235,88 +221,57 @@ function useElapsed(): string {
 function BuildPipeline({
   phase,
   streamingText,
-  onStop,
 }: {
   phase: string;
   streamingText: string;
-  onStop: () => void;
 }) {
   const buildSteps = useWorkspaceStore((s) => s.buildSteps);
   const elapsed = useElapsed();
 
   const latest = buildSteps[buildSteps.length - 1];
-  const headline =
-    PHASE_HEADLINE[latest?.kind ?? phase] ?? "Astra is working";
-  const feed = buildSteps.slice(-6);
+  const headline = PHASE_HEADLINE[latest?.kind ?? phase] ?? "Astra is working";
+  const prior = buildSteps.slice(-4, -1);
 
   return (
-    <div className="mt-5 overflow-hidden rounded-2xl border border-brass/25 bg-gradient-to-b from-carbon-raised to-carbon shadow-[0_0_32px_-14px] shadow-brass/40">
-      {/* Header: pulsing orb + live headline + elapsed + stop */}
-      <div className="flex items-center gap-2.5 px-3.5 py-3">
-        <span className="relative flex size-2.5 shrink-0">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brass/50" />
-          <span className="relative inline-flex size-2.5 rounded-full bg-brass" />
-        </span>
-        <p className="min-w-0 truncate text-[13px] font-medium text-dusk">
-          {headline}
-          <span className="animate-pulse">…</span>
-        </p>
-        <span className="ml-auto shrink-0 font-mono text-[11px] tabular-nums text-dusk-faint">
-          {elapsed}
-        </span>
-        <button
-          onClick={onStop}
-          className="flex shrink-0 items-center gap-1.5 rounded-md border border-carbon-line px-2 py-1 text-[11px] font-medium text-dusk-muted transition-colors hover:border-signal-red/40 hover:text-signal-red"
-        >
-          <Square className="size-3 fill-current" />
-          Stop
-        </button>
-      </div>
-
-      {/* Shimmer progress */}
-      <div className="relative h-px overflow-hidden bg-carbon-line/60">
-        <div className="absolute inset-y-0 w-1/3 animate-[shimmer_1.6s_ease-in-out_infinite] bg-gradient-to-r from-transparent via-brass/80 to-transparent" />
-        <style>{`@keyframes shimmer { 0% { left: -33% } 100% { left: 100% } }`}</style>
-      </div>
-
-      {/* Activity feed (background job mode) */}
-      {feed.length > 0 && (
-        <div className="space-y-1.5 px-3.5 py-3">
-          {feed.map((step, i) => {
-            const isLast = i === feed.length - 1;
-            const Icon = STEP_ICON[step.kind] ?? Sparkles;
-            return (
-              <div
-                key={`${step.t}-${i}`}
-                className={cn(
-                  "flex items-start gap-2 text-[12px] leading-relaxed transition-opacity",
-                  isLast ? "text-dusk" : "text-dusk-faint/80",
-                )}
-              >
-                {isLast ? (
-                  <Loader2 className="mt-0.5 size-3 shrink-0 animate-spin text-brass" />
-                ) : step.kind === "error" ? (
-                  <X className="mt-0.5 size-3 shrink-0 text-signal-red" />
-                ) : (
-                  <Check className="mt-0.5 size-3 shrink-0 text-signal-green/80" />
-                )}
-                <span className="min-w-0">
-                  <Icon className="mr-1 inline size-3 -translate-y-px text-dusk-faint" />
-                  {step.text}
-                </span>
-              </div>
-            );
-          })}
+    <div className="mt-5 pl-0.5">
+      {/* Completed steps — faint, plain, no chrome */}
+      {prior.length > 0 && (
+        <div className="mb-1.5 space-y-1">
+          {prior.map((step, i) => (
+            <p
+              key={`${step.t}-${i}`}
+              className="flex items-start gap-1.5 text-[12px] leading-relaxed text-dusk-faint/60"
+            >
+              <Check className="mt-0.5 size-3 shrink-0 opacity-60" />
+              <span className="min-w-0">{step.text}</span>
+            </p>
+          ))}
         </div>
       )}
 
+      {/* Current status — shimmering text, Claude-style */}
+      <div className="flex items-baseline gap-2">
+        <span className="animate-[ren-shimmer_2.2s_linear_infinite] bg-[linear-gradient(90deg,var(--color-dusk-faint)_30%,var(--color-dusk)_50%,var(--color-dusk-faint)_70%)] bg-[length:200%_100%] bg-clip-text text-[13px] font-medium text-transparent">
+          {headline}…
+        </span>
+        <span className="font-mono text-[10.5px] tabular-nums text-dusk-faint/50">
+          {elapsed}
+        </span>
+      </div>
+      <style>{`@keyframes ren-shimmer { 0% { background-position: 200% 0 } 100% { background-position: 0% 0 } }`}</style>
+
+      {/* Detail of the current step */}
+      {latest?.text && (
+        <p className="mt-1 text-[12px] leading-relaxed text-dusk-faint/80">
+          {latest.text}
+        </p>
+      )}
+
       {/* Legacy streaming preview */}
-      {feed.length === 0 && streamingText && (
-        <div className="px-3.5 py-3">
-          <p className="line-clamp-5 whitespace-pre-wrap font-mono text-[11.5px] leading-relaxed text-dusk-faint">
-            {streamingText}
-          </p>
-        </div>
+      {buildSteps.length === 0 && streamingText && (
+        <p className="mt-1.5 line-clamp-3 whitespace-pre-wrap font-mono text-[11.5px] leading-relaxed text-dusk-faint/70">
+          {streamingText}
+        </p>
       )}
     </div>
   );
