@@ -816,6 +816,10 @@ function watchJob(jobId: string, creditsDeducted: number) {
   if (jobPollTimer) clearTimeout(jobPollTimer);
 
   let lastStepCount = -1;
+  // Self-healing state: how many times we've re-kicked a stalled chain, and
+  // when — a resurrection gets 150s to show a heartbeat before the next move.
+  let rekicks = 0;
+  let lastKickAt = 0;
 
   const poll = async () => {
     // The user may have navigated to another project — stop watching.
@@ -842,27 +846,43 @@ function watchJob(jobId: string, creditsDeducted: number) {
             void refreshFilesLive();
           }
 
-          // Dead-worker detection: the runner heartbeats updated_at at least
-          // every ~20s while generating. If nothing has moved for 2+ minutes,
-          // the worker died — everything saved so far is kept.
-          if (
-            ACTIVE_STATUSES.includes(job.status) &&
-            job.updated_at &&
-            Date.now() - new Date(job.updated_at).getTime() > 120_000
-          ) {
-            await refreshFilesLive();
-            appendAssistant(
-              'The build worker went quiet — everything generated so far has been saved. Say "continue the build" to finish the rest.',
-            );
-            useWorkspaceStore.setState({
-              isBuilding: false,
-              phase: "idle",
-              streamingText: "",
-              buildSteps: [],
-              activeJobId: null,
-              jobStartedAt: null,
-            });
-            return;
+          // Dead-worker detection + SELF-HEALING. The runner heartbeats
+          // updated_at every ~20s while generating; 2+ minutes of silence
+          // means the worker was killed (usually the platform's function time
+          // limit mid-pass) or the first pass never started. The step chain is
+          // idempotent and lock-protected — and by the time staleness is
+          // detected the pass lock (270s) has already expired — so instead of
+          // giving up, RE-KICK the chain and let it resume the same pass.
+          // Files from completed passes are already persisted either way.
+          // Only after two failed resurrections do we declare the build dead.
+          if (ACTIVE_STATUSES.includes(job.status) && job.updated_at) {
+            const stalledMs = Date.now() - new Date(job.updated_at).getTime();
+            const sinceKickMs = Date.now() - lastKickAt;
+            if (stalledMs > 120_000 && sinceKickMs > 150_000) {
+              if (rekicks < 2) {
+                rekicks += 1;
+                lastKickAt = Date.now();
+                void fetch("/api/builder/jobs/step", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ jobId }),
+                }).catch(() => {});
+              } else {
+                await refreshFilesLive();
+                appendAssistant(
+                  'The build worker went quiet and could not be revived — everything generated so far has been saved. Say "continue the build" to finish the rest.',
+                );
+                useWorkspaceStore.setState({
+                  isBuilding: false,
+                  phase: "idle",
+                  streamingText: "",
+                  buildSteps: [],
+                  activeJobId: null,
+                  jobStartedAt: null,
+                });
+                return;
+              }
+            }
           }
           if (job.status === "done") {
             await finalizeJob(job, creditsDeducted || job.credits_deducted || 0);
