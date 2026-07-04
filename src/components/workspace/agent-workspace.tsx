@@ -96,6 +96,20 @@ export function AgentWorkspace({ projectId, projectName }: Props) {
     return () => clearInterval(t);
   }, [refresh]);
 
+  const anyLooping = workforce.some((w) => w.agent.loopEnabled);
+
+  // In-app scheduler tick: while any loop is on and this view is open, ping
+  // the tick endpoint every minute so due agents run on time even on hosting
+  // plans where the platform cron only fires daily. The endpoint claims
+  // atomically, so overlapping ticks (other tabs, the cron) are harmless.
+  useEffect(() => {
+    if (!anyLooping) return;
+    const ping = () => void fetch("/api/agents/tick", { method: "POST" }).catch(() => {});
+    ping();
+    const t = setInterval(ping, 60_000);
+    return () => clearInterval(t);
+  }, [anyLooping]);
+
   function pushLog(entry: Omit<LogEntry, "id" | "time">) {
     setLog((l) =>
       [
@@ -227,8 +241,6 @@ export function AgentWorkspace({ projectId, projectName }: Props) {
       setPromoting(false);
     }
   }
-
-  const anyLooping = workforce.some((w) => w.agent.loopEnabled);
 
   if (loading) {
     return (
