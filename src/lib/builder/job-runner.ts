@@ -129,18 +129,39 @@ async function saveProjectFiles(
   await supabase.from("project_files").upsert(rows, { onConflict: "project_id,path,branch" });
 }
 
-/** Fire-and-forget the next pass as a fresh invocation. */
-async function chainNext(origin: string, jobId: string): Promise<void> {
-  try {
-    await fetch(`${origin}/api/builder/jobs/step`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ jobId }),
-    });
-  } catch {
-    // If the handoff fails, the client's dead-worker detection surfaces it and
-    // everything persisted so far is kept.
+/**
+ * Hand off to the next pass as a fresh invocation. Retries a couple of times
+ * (the internal request can transiently fail on a cold start), and — this
+ * used to just swallow any failure, which silently killed the whole chain
+ * with zero trace and read to the user as "the build worker went quiet" —
+ * now marks the job as errored with the real HTTP status/body if every
+ * attempt fails, so a broken handoff (bad NEXT_PUBLIC_APP_URL, deployment
+ * protection blocking internal requests, etc.) is visible instead of silent.
+ */
+async function chainNext(supabase: Supa, jobId: string, origin: string): Promise<void> {
+  let lastDetail = "";
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(`${origin}/api/builder/jobs/step`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId }),
+      });
+      if (res.ok) return;
+      lastDetail = `${res.status} ${(await res.text().catch(() => "")).slice(0, 200)}`;
+    } catch (e) {
+      lastDetail = e instanceof Error ? e.message : String(e);
+    }
+    if (attempt < 2) await new Promise((r) => setTimeout(r, 1500 * (attempt + 1)));
   }
+  await supabase
+    .from("build_jobs")
+    .update({
+      status: "error",
+      error: `Could not hand off to the next build step (${lastDetail || "unknown error"}). Check NEXT_PUBLIC_APP_URL is set to your real deployment URL and that /api/builder/jobs/step isn't blocked by deployment protection.`,
+      completed_at: new Date().toISOString(),
+    })
+    .eq("id", jobId);
 }
 
 /** Does this request need the big budget, or is it a quick change? */
@@ -159,14 +180,32 @@ function classifyBig(prompt: string, firstBuild: boolean): boolean {
 export async function runBuildStep(jobId: string, origin: string): Promise<void> {
   const supabase = createAdminClient();
 
-  const { data: jobData } = await supabase
+  const { data: jobData, error: fetchError } = await supabase
     .from("build_jobs")
     .select(
       "id, user_id, project_id, status, cancelled, prompt, messages, is_first_build, changed_paths, input_tokens, output_tokens, state",
     )
     .eq("id", jobId)
     .single();
-  if (!jobData) return;
+
+  // A query error here (e.g. the `state` column missing because migration
+  // 20260704_build_jobs_state.sql hasn't been applied) used to be swallowed —
+  // the function returned silently and the job sat frozen forever with no
+  // diagnostic, which read to the user as "the build worker went quiet".
+  // Surface it loudly instead: mark the job as errored with the real reason.
+  if (fetchError) {
+    await supabase
+      .from("build_jobs")
+      .update({
+        status: "error",
+        error: `Could not load the build job: ${fetchError.message}. If this mentions a missing column, a database migration hasn't been applied yet (check supabase/migrations/20260704_build_jobs_state.sql).`,
+        completed_at: new Date().toISOString(),
+      })
+      .eq("id", jobId);
+    return;
+  }
+  if (!jobData) return; // job row genuinely doesn't exist — nothing to run
+
   const job = jobData as JobRow;
 
   // Terminal states are final — a stray chained call must not restart work.
@@ -283,7 +322,7 @@ export async function runBuildStep(jobId: string, origin: string): Promise<void>
           kind: "writing",
           text: "First response had no files — asking Astra to emit the app directly",
         });
-        await chainNext(origin, jobId);
+        await chainNext(supabase, jobId, origin);
         return;
       }
       await fail("Astra couldn't produce a valid file patch for this request.");
@@ -384,7 +423,7 @@ export async function runBuildStep(jobId: string, origin: string): Promise<void>
       },
       "repairing",
     );
-    await chainNext(origin, jobId);
+    await chainNext(supabase, jobId, origin);
   } catch (e) {
     await fail(e instanceof Error ? e.message : "Build failed unexpectedly.");
   }
