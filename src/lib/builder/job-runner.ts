@@ -16,7 +16,8 @@
  */
 
 import { createAdminClient } from "@/lib/supabase/admin";
-import { completeAstraText } from "@/lib/ai/astra";
+import { streamAstraText, type ChatMsg, type TokenUsage } from "@/lib/ai/astra";
+import { extractUsage } from "@/lib/ai/usage";
 import {
   buildNewProjectPrompt,
   buildEditPrompt,
@@ -72,6 +73,57 @@ interface Step {
 
 const FORMAT_NOTE =
   "Output the application NOW as a single <file_patches> JSON block with the FULL contents of every file. No prose, no questions — only the block.";
+
+// A pass is bounded by TIME, not just tokens: the function is killed at ~300s
+// regardless of token budgets, and on GLM the (hidden) reasoning tokens count
+// against max_tokens — so a token cap small enough to always fit in time also
+// starves complex prompts of content. Instead we stream and cut generation at
+// this deadline, salvage every complete file (the parser handles truncation),
+// and let the NEXT pass continue the build. Override for hosts with different
+// function limits.
+const PASS_TIME_BUDGET_MS =
+  Number(process.env.ASTRA_PASS_TIME_BUDGET_MS) || 200_000;
+
+/**
+ * Run one model call, cutting the stream at the pass deadline. Whatever
+ * arrived by then is returned (timeSliced=true) — the truncation-tolerant
+ * parser recovers all complete files and the chain finishes the rest in the
+ * following pass. Usage is only known when the stream ends naturally.
+ */
+async function generateTimeBoxed(
+  messages: ChatMsg[],
+  maxTokens: number,
+): Promise<
+  | { ok: true; text: string; usage: TokenUsage | null; timeSliced: boolean }
+  | { ok: false; status: number; detail: string }
+> {
+  const res = await streamAstraText(messages, { maxTokens, reasoningEffort: "high" });
+  if (!res.ok) return res;
+
+  const reader = res.stream.getReader();
+  const decoder = new TextDecoder();
+  const deadline = Date.now() + PASS_TIME_BUDGET_MS;
+  let raw = "";
+  let timeSliced = false;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) raw += decoder.decode(value, { stream: true });
+      if (Date.now() > deadline) {
+        timeSliced = true;
+        await reader.cancel().catch(() => {});
+        break;
+      }
+    }
+  } catch {
+    // Upstream hiccup mid-stream — keep what we have; salvage handles it.
+    timeSliced = true;
+  }
+  raw += decoder.decode();
+  const { text, usage } = extractUsage(raw);
+  return { ok: true, text, usage, timeSliced };
+}
 
 async function log(
   supabase: Supa,
@@ -257,14 +309,12 @@ export async function runBuildStep(jobId: string, origin: string): Promise<void>
       );
     }
 
-    // Per-pass budget is bounded by TIME, not just tokens: one pass must
-    // finish inside the function's ~300s limit or the platform kills the
-    // worker mid-generate (heartbeat dies with it → "went quiet"). At GLM's
-    // throughput with high reasoning, 16k output could exceed that; 10k
-    // reliably fits. Big builds get an extra pass so the total output budget
-    // stays the same — more, smaller, unkillable steps.
+    // Generous token budget — GLM's hidden reasoning tokens count against
+    // max_tokens, so a tight cap starves complex prompts of file content
+    // ("couldn't produce a valid file patch"). Time safety comes from the
+    // streaming deadline in generateTimeBoxed, not from squeezing tokens.
     const maxTokens = state.big
-      ? Number(process.env.ASTRA_MAX_OUTPUT_TOKENS) || 10_000
+      ? Number(process.env.ASTRA_MAX_OUTPUT_TOKENS) || 16_000
       : 8_000;
     const maxPasses = state.big ? 5 : 2;
 
@@ -286,7 +336,7 @@ export async function runBuildStep(jobId: string, origin: string): Promise<void>
 
     let res;
     try {
-      res = await completeAstraText(
+      res = await generateTimeBoxed(
         [
           { role: "system", content: system },
           ...history.map((m) => ({ role: m.role, content: m.content })),
@@ -297,7 +347,7 @@ export async function runBuildStep(jobId: string, origin: string): Promise<void>
             }`,
           },
         ],
-        { maxTokens, reasoningEffort: "high" },
+        maxTokens,
       );
     } finally {
       clearInterval(heartbeat);
@@ -305,6 +355,13 @@ export async function runBuildStep(jobId: string, origin: string): Promise<void>
     if (!res.ok) {
       await fail(`${res.status}: ${res.detail}`);
       return;
+    }
+    const timeSliced = res.timeSliced;
+    if (timeSliced) {
+      await log(supabase, jobId, {
+        kind: "info",
+        text: "Pass reached its time slice — saving what's complete and continuing",
+      });
     }
 
     await supabase
@@ -379,7 +436,10 @@ export async function runBuildStep(jobId: string, origin: string): Promise<void>
 
     const issues = detectFatalIssues(cleanPlan, files, firstBuild && pass === 0);
     const missingApp = job.is_first_build && !state.appWritten;
-    const incomplete = issues.length > 0 || missingApp || dropped.length > 0;
+    // A time-sliced pass is by definition unfinished — even if everything it
+    // DID emit is clean — so it always chains a continuation pass.
+    const incomplete =
+      issues.length > 0 || missingApp || dropped.length > 0 || timeSliced;
 
     state.planSummary = cleanPlan.plan?.trim() || state.planSummary;
     state.stubbedCount = stubbed.length;
@@ -407,13 +467,16 @@ export async function runBuildStep(jobId: string, origin: string): Promise<void>
 
     state.pass = pass + 1;
     state.retried = false;
+    const issueNote = `${describeFatalIssues(issues)}${
+      dropped.length
+        ? `\nThese files were cut off mid-stream and must be re-emitted complete: ${dropped.join(", ")}`
+        : ""
+    }`.trim();
     state.repairNote = missingApp
       ? "The app is only partially built. Create every file still missing — START with src/App.tsx wiring HashRouter routes for all pages, then each missing page/component. Output ONLY missing or broken files."
-      : `${describeFatalIssues(issues)}${
-          dropped.length
-            ? `\nThese files were cut off mid-stream and must be re-emitted complete: ${dropped.join(", ")}`
-            : ""
-        }`;
+      : issueNote ||
+        // Time-sliced with everything emitted so far clean: plain continuation.
+        "Your previous response was cut off by a time limit after the files already saved. Continue the build: output ONLY the remaining files still missing (pages, components, stores, data) as a <file_patches> block. Keep all existing files intact.";
     state.lockUntil = 0;
     await saveState(supabase, jobId, state);
     await log(
