@@ -257,10 +257,16 @@ export async function runBuildStep(jobId: string, origin: string): Promise<void>
       );
     }
 
+    // Per-pass budget is bounded by TIME, not just tokens: one pass must
+    // finish inside the function's ~300s limit or the platform kills the
+    // worker mid-generate (heartbeat dies with it → "went quiet"). At GLM's
+    // throughput with high reasoning, 16k output could exceed that; 10k
+    // reliably fits. Big builds get an extra pass so the total output budget
+    // stays the same — more, smaller, unkillable steps.
     const maxTokens = state.big
-      ? Number(process.env.ASTRA_MAX_OUTPUT_TOKENS) || 16_000
+      ? Number(process.env.ASTRA_MAX_OUTPUT_TOKENS) || 10_000
       : 8_000;
-    const maxPasses = state.big ? 4 : 2;
+    const maxPasses = state.big ? 5 : 2;
 
     // ── GENERATE (one model call, heartbeat while it runs) ──────────────────
     const system = state.repairNote
