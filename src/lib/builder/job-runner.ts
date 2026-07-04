@@ -59,11 +59,21 @@ interface JobState {
   big?: boolean;
   appWritten?: boolean;
   repairNote?: string;
-  retried?: boolean;
+  /** How many consecutive "produced no parseable files" attempts so far. GLM's
+   *  reasoning time varies call to call — one bad attempt (especially on a
+   *  maximally complex prompt) isn't proof the request is impossible, so this
+   *  is a bounded counter, not a one-shot flag. */
+  emptyAttempts?: number;
   lockUntil?: number;
   planSummary?: string;
   stubbedCount?: number;
 }
+
+// How many consecutive zero-content attempts we tolerate before giving up.
+// Each is a full model call within its own pass — expensive in wall-clock,
+// but the build's credit charge is fixed per job, not per pass, so this only
+// costs time and our own inference spend, never the user extra credits.
+const MAX_EMPTY_ATTEMPTS = 3;
 
 interface Step {
   t: number;
@@ -81,8 +91,16 @@ const FORMAT_NOTE =
 // this deadline, salvage every complete file (the parser handles truncation),
 // and let the NEXT pass continue the build. Override for hosts with different
 // function limits.
+//
+// GLM reasons in one block BEFORE emitting any visible content — for a
+// maximally complex ask ("exact real Minecraft graphics and functionality")
+// its reasoning phase alone can run past 200s, so the deadline fires with
+// ZERO file content ever produced, not just truncated files. The budget is
+// kept close to the platform limit (300s) to give reasoning the most runway
+// possible; ~30s of margin covers auth, DB writes, and the heartbeat setup
+// that happen around the model call in the same invocation.
 const PASS_TIME_BUDGET_MS =
-  Number(process.env.ASTRA_PASS_TIME_BUDGET_MS) || 200_000;
+  Number(process.env.ASTRA_PASS_TIME_BUDGET_MS) || 265_000;
 
 /**
  * Run one model call, cutting the stream at the pass deadline. Whatever
@@ -294,7 +312,7 @@ export async function runBuildStep(jobId: string, origin: string): Promise<void>
     const firstBuild = (job.is_first_build || files.length === 0) && !(state.appWritten ?? false);
     if (!files.length) files = createBaseTemplate();
 
-    if (pass === 0 && !state.retried) {
+    if (pass === 0 && !state.emptyAttempts) {
       state.big = classifyBig(job.prompt, job.is_first_build);
       await log(
         supabase,
@@ -374,21 +392,30 @@ export async function runBuildStep(jobId: string, origin: string): Promise<void>
 
     const plan = parseFilePatchPlan(res.text);
 
-    // No parseable files → one format-forcing retry as its own chained pass.
+    // No parseable files → format-forcing retry, bounded by MAX_EMPTY_ATTEMPTS.
+    // On a very complex prompt GLM can spend an entire pass's time budget
+    // reasoning and emit nothing — that's not proof the request is impossible,
+    // just that reasoning didn't finish in time this attempt, so we retry
+    // several times (each its own chained pass) before giving up.
     if (!plan) {
-      if (!state.retried) {
-        state.retried = true;
+      const attempts = (state.emptyAttempts ?? 0) + 1;
+      if (attempts < MAX_EMPTY_ATTEMPTS) {
+        state.emptyAttempts = attempts;
         state.repairNote = FORMAT_NOTE;
         state.lockUntil = 0;
         await saveState(supabase, jobId, state);
         await log(supabase, jobId, {
           kind: "writing",
-          text: "First response had no files — asking Astra to emit the app directly",
+          text: timeSliced
+            ? `Astra spent the full pass reasoning and hadn't started writing yet — retrying (${attempts}/${MAX_EMPTY_ATTEMPTS - 1})`
+            : `First response had no files — asking Astra to emit the app directly (${attempts}/${MAX_EMPTY_ATTEMPTS - 1})`,
         });
         await chainNext(supabase, jobId, origin);
         return;
       }
-      await fail("Astra couldn't produce a valid file patch for this request.");
+      await fail(
+        `Astra spent ${MAX_EMPTY_ATTEMPTS} attempts reasoning without producing any files — this request may be too complex for one pass. Try breaking it into smaller steps (e.g. "scaffold the app structure first").`,
+      );
       return;
     }
 
@@ -466,7 +493,7 @@ export async function runBuildStep(jobId: string, origin: string): Promise<void>
     }
 
     state.pass = pass + 1;
-    state.retried = false;
+    state.emptyAttempts = 0; // this pass produced a real plan — reset the counter
     const issueNote = `${describeFatalIssues(issues)}${
       dropped.length
         ? `\nThese files were cut off mid-stream and must be re-emitted complete: ${dropped.join(", ")}`
