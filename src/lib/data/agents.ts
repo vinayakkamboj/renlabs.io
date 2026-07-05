@@ -67,6 +67,86 @@ export interface Agent {
   nextRunAt: string | null;
   /** Consecutive failed cycles — 3 in a row auto-pauses the loop. */
   consecutiveFailures: number;
+  /** Owner-written rules the agent must follow on every run (its "constitution"). */
+  instructions: string | null;
+  /** What the agent works on — its scope within the project (e.g. "only the
+   *  checkout flow", "docs and copy, never code"). */
+  focus: string | null;
+  /** Local hour [0..23] the agent may start working, inclusive. Null = any hour. */
+  workingHoursStart: number | null;
+  /** Local hour (0..24] the agent must stop, exclusive. Paired with start. */
+  workingHoursEnd: number | null;
+  /** Days the agent works: 0=Sunday .. 6=Saturday. Null/empty = every day. */
+  workingDays: number[] | null;
+  /** IANA timezone the working hours are interpreted in. */
+  timezone: string;
+  /** Hard output-token cap for a single cycle. */
+  maxTokensPerRun: number;
+  /** Total tokens/day this agent may spend. Null = unlimited. */
+  dailyTokenBudget: number | null;
+  /** Tokens spent on tokensTodayDate (rolls over at local midnight). */
+  tokensSpentToday: number;
+  /** The date tokensSpentToday counts toward (YYYY-MM-DD). */
+  tokensTodayDate: string | null;
+}
+
+// ─── Working hours ────────────────────────────────────────────────────────────
+
+/** Hour (0–23) and weekday (0=Sun..6=Sat) of `now` in the agent's timezone.
+ *  Falls back to UTC if the stored timezone is invalid — a bad setting must
+ *  never crash the scheduler. */
+function localClock(timezone: string, now: Date): { hour: number; day: number } {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone || "UTC",
+      hour: "numeric",
+      hour12: false,
+      weekday: "short",
+    }).formatToParts(now);
+    const hour =
+      Number(parts.find((p) => p.type === "hour")?.value ?? now.getUTCHours()) % 24;
+    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const day = days.indexOf(parts.find((p) => p.type === "weekday")?.value ?? "");
+    return { hour, day: day >= 0 ? day : now.getUTCDay() };
+  } catch {
+    return { hour: now.getUTCHours(), day: now.getUTCDay() };
+  }
+}
+
+/**
+ * Is the agent inside its owner-defined working window right now?
+ * No window configured = always on. Handles overnight windows (22 → 6).
+ */
+export function isWithinWorkingHours(
+  agent: Pick<Agent, "workingHoursStart" | "workingHoursEnd" | "workingDays" | "timezone">,
+  now: Date = new Date(),
+): boolean {
+  const { hour, day } = localClock(agent.timezone, now);
+  if (agent.workingDays?.length && !agent.workingDays.includes(day)) return false;
+  const start = agent.workingHoursStart;
+  const end = agent.workingHoursEnd;
+  if (start == null || end == null || start === end) return true;
+  return start < end
+    ? hour >= start && hour < end // e.g. 9 → 17
+    : hour >= start || hour < end; // overnight, e.g. 22 → 6
+}
+
+/**
+ * The next moment the agent's working window opens, for scheduling next_run_at
+ * when a cycle lands outside the window. Scans hour-by-hour (bounded to one
+ * week) — simple and DST-proof, and the scheduler only calls it on skips.
+ */
+export function nextWorkingWindowStart(
+  agent: Pick<Agent, "workingHoursStart" | "workingHoursEnd" | "workingDays" | "timezone">,
+  now: Date = new Date(),
+): Date {
+  const HOUR = 3_600_000;
+  // Align to the top of the next hour, then find the first in-window hour.
+  let t = Math.ceil(now.getTime() / HOUR) * HOUR;
+  for (let i = 0; i < 24 * 7; i++, t += HOUR) {
+    if (isWithinWorkingHours(agent, new Date(t))) return new Date(t);
+  }
+  return new Date(now.getTime() + HOUR); // no valid window found — retry in 1h
 }
 
 export interface AgentTask {

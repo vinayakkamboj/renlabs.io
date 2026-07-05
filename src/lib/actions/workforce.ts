@@ -54,6 +54,16 @@ function mapAgent(r: any): Agent {
     rateTokensPerMin: r.rate_tokens_per_min ?? 1500,
     nextRunAt: r.next_run_at ?? null,
     consecutiveFailures: r.consecutive_failures ?? 0,
+    instructions: r.instructions ?? null,
+    focus: r.focus ?? null,
+    workingHoursStart: r.working_hours_start ?? null,
+    workingHoursEnd: r.working_hours_end ?? null,
+    workingDays: r.working_days ?? null,
+    timezone: r.timezone ?? "UTC",
+    maxTokensPerRun: r.max_tokens_per_run ?? 12000,
+    dailyTokenBudget: r.daily_token_budget ?? null,
+    tokensSpentToday: r.tokens_spent_today ?? 0,
+    tokensTodayDate: r.tokens_today_date ?? null,
   };
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */

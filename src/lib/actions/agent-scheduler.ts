@@ -72,6 +72,9 @@ export interface TickResult {
   name: string;
   ok: boolean;
   error?: string;
+  /** Set when the cycle was intentionally not run (outside working hours,
+   *  daily token budget exhausted) — informational, never a failure. */
+  skipped?: string;
 }
 
 /** Run one ambient cycle for each claimed agent, sequentially (bounds load —
@@ -84,8 +87,14 @@ export async function runClaimedAgents(
   const results: TickResult[] = [];
   for (const agent of claimed) {
     try {
-      const r = await runAgentTask(agent.id, undefined, requesterId);
-      results.push({ agentId: agent.id, name: agent.name, ok: r.ok, error: r.error });
+      const r = await runAgentTask(agent.id, undefined, requesterId, { ambient: true });
+      results.push({
+        agentId: agent.id,
+        name: agent.name,
+        ok: r.ok,
+        error: r.error,
+        skipped: r.skipped,
+      });
     } catch (e) {
       results.push({
         agentId: agent.id,

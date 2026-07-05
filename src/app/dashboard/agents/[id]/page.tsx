@@ -1,8 +1,18 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ArrowLeft, CheckCircle2, Coins, Clock, FileText, Target } from "lucide-react";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Coins,
+  Clock,
+  FileText,
+  Gauge,
+  ScrollText,
+  Target,
+} from "lucide-react";
 import { Panel } from "@/components/platform/widgets";
 import { AgentControls, AgentStatusBadge } from "@/components/platform/agent-controls";
+import { AgentSettingsButton } from "@/components/platform/agent-settings-modal";
 import { RunAgentButton } from "@/components/platform/run-agent-button";
 import { TaskQueue } from "@/components/platform/task-queue";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
@@ -50,9 +60,21 @@ export default async function AgentDetailPage({
       ? `$${(agent.spentCents / 100).toFixed(2)} / $${(agent.budgetCents / 100).toFixed(2)}`
       : `$${(agent.spentCents / 100).toFixed(2)} spent`;
 
+  const hoursLabel =
+    agent.workingHoursStart != null && agent.workingHoursEnd != null
+      ? `${String(agent.workingHoursStart).padStart(2, "0")}:00–${String(agent.workingHoursEnd).padStart(2, "0")}:00`
+      : "Always on";
+  const today = new Date().toISOString().slice(0, 10);
+  const spentToday = agent.tokensTodayDate === today ? agent.tokensSpentToday : 0;
+  const tokensLabel = agent.dailyTokenBudget
+    ? `${spentToday.toLocaleString()} / ${agent.dailyTokenBudget.toLocaleString()}`
+    : `${spentToday.toLocaleString()} today`;
+
   const stats = [
     { icon: Clock, label: "Last execution", value: relativeTime(agent.lastRunAt) },
     { icon: Coins, label: "Cost usage", value: budgetLabel },
+    { icon: Gauge, label: "Tokens", value: tokensLabel },
+    { icon: Clock, label: "Working hours", value: hoursLabel },
     { icon: FileText, label: "Reports", value: String(reports.length) },
     { icon: CheckCircle2, label: "Tasks completed", value: String(completedTasks) },
   ];
@@ -96,6 +118,7 @@ export default async function AgentDetailPage({
         </div>
         <div className="flex items-center gap-2.5">
           <RunAgentButton agentId={agent.id} />
+          <AgentSettingsButton agent={agent} />
           <AgentControls
             agentId={agent.id}
             status={agent.status}
@@ -109,6 +132,14 @@ export default async function AgentDetailPage({
         <p className="text-[14px] leading-relaxed text-dusk">
           {agent.goal ?? ROLE_PRESETS[agent.role]?.defaultGoal}
         </p>
+        {agent.focus && (
+          <p className="mt-3 text-[12.5px] text-dusk-muted">
+            <span className="font-mono text-[10.5px] uppercase tracking-[0.12em] text-dusk-faint">
+              Scope ·{" "}
+            </span>
+            {agent.focus}
+          </p>
+        )}
         {agent.permissions.length > 0 && (
           <div className="mt-4 flex flex-wrap gap-1.5">
             {agent.permissions.map((p) => (
@@ -123,8 +154,25 @@ export default async function AgentDetailPage({
         )}
       </Panel>
 
+      {/* Owner rules — the agent's constitution, injected on every run */}
+      {agent.instructions && (
+        <Panel
+          title="Rules"
+          meta={
+            <span className="flex items-center gap-1.5 text-[11.5px] text-dusk-faint">
+              <ScrollText className="size-3.5" />
+              Applied on every run
+            </span>
+          }
+        >
+          <pre className="whitespace-pre-wrap font-sans text-[13px] leading-relaxed text-dusk">
+            {agent.instructions}
+          </pre>
+        </Panel>
+      )}
+
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
         {stats.map((s) => (
           <div key={s.label} className="rounded-xl border border-carbon-line bg-carbon-raised p-4">
             <s.icon className="size-4 text-dusk-faint" />

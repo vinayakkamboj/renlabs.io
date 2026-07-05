@@ -34,6 +34,11 @@ import {
   isCodePath,
   isCodeFileComplete,
 } from "./file-patches";
+import {
+  hardenGeneratedFiles,
+  detectDesignIssues,
+  describeDesignIssues,
+} from "./design-lint";
 import { createBaseTemplate } from "./base-template";
 import type { ProjectFile } from "./types";
 
@@ -68,6 +73,8 @@ interface JobState {
   lockUntil?: number;
   planSummary?: string;
   stubbedCount?: number;
+  /** The one bounded design-QA repair pass has already run — never loop it. */
+  designPassDone?: boolean;
 }
 
 // How many consecutive zero-content attempts we tolerate before giving up.
@@ -456,11 +463,20 @@ export async function runBuildStep(jobId: string, origin: string): Promise<void>
       : plan;
 
     const applied = normalizeProjectImports(applyPatchPlan(files, cleanPlan));
-    files = applied.files;
+    // Deterministic hardening — e.g. BrowserRouter → HashRouter — fixes the
+    // unambiguous design bugs without spending a model call on them.
+    const hardened = hardenGeneratedFiles(applied.files);
+    files = hardened.files;
     if (applied.fixed.length) {
       await log(supabase, jobId, {
         kind: "verifying",
         text: `Normalized bare imports to relative paths in ${applied.fixed.length} file${applied.fixed.length === 1 ? "" : "s"}`,
+      });
+    }
+    if (hardened.fixed.length) {
+      await log(supabase, jobId, {
+        kind: "verifying",
+        text: `Auto-fixed router usage (BrowserRouter → HashRouter) in ${hardened.fixed.join(", ")}`,
       });
     }
 
@@ -481,6 +497,37 @@ export async function runBuildStep(jobId: string, origin: string): Promise<void>
 
     state.planSummary = cleanPlan.plan?.trim() || state.planSummary;
     state.stubbedCount = stubbed.length;
+
+    // ── DESIGN QA — one bounded pass, only once the build is structurally
+    // sound. Catches the "compiles fine, looks broken" class: emoji in UI,
+    // hardcoded hex colors, placeholder fonts, missing dark theme, raw
+    // anchors. Never loops: designPassDone guarantees at most one repair.
+    if (!incomplete && !state.designPassDone && pass + 1 < maxPasses) {
+      const designIssues = detectDesignIssues(cleanPlan, firstBuild && pass === 0);
+      if (designIssues.length > 0) {
+        state.pass = pass + 1;
+        state.emptyAttempts = 0;
+        state.designPassDone = true;
+        state.repairNote =
+          `The app builds, but a design review found these violations of the design contract. ` +
+          `Fix ALL of them, changing only the files named — do not touch anything else:\n` +
+          describeDesignIssues(designIssues);
+        state.lockUntil = 0;
+        await saveState(supabase, jobId, state);
+        await log(
+          supabase,
+          jobId,
+          {
+            kind: "repairing",
+            text: `Design review found ${designIssues.length} issue${designIssues.length === 1 ? "" : "s"} — Astra is polishing the design`,
+          },
+          "repairing",
+        );
+        await chainNext(supabase, jobId, origin);
+        return;
+      }
+      state.designPassDone = true; // reviewed clean — don't re-lint later passes
+    }
 
     // ── DECIDE: done, or chain the next pass ────────────────────────────────
     if (!incomplete || pass + 1 >= maxPasses) {

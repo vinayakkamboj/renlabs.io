@@ -8,7 +8,14 @@ import {
   detectFatalIssues,
   describeFatalIssues,
   stubDanglingImports,
+  normalizeProjectImports,
 } from "@/lib/builder/file-patches";
+import {
+  hardenGeneratedFiles,
+  detectDesignIssues,
+  describeDesignIssues,
+} from "@/lib/builder/design-lint";
+import { isWithinWorkingHours, nextWorkingWindowStart } from "@/lib/data/agents";
 import { buildEditPrompt, buildRepairPrompt } from "@/lib/builder/prompts";
 import { logActivity, setTaskStatus } from "./agents";
 import { deductAgentRunCredits } from "@/lib/credits/server";
@@ -21,6 +28,9 @@ import type { ProjectFile } from "@/lib/builder/types";
 export interface RunAgentTaskResult {
   ok: boolean;
   error?: string;
+  /** Set when the run was intentionally not executed (not a failure) —
+   *  e.g. an ambient cycle landing outside the agent's working hours. */
+  skipped?: "outside_working_hours" | "daily_token_budget";
   filesChanged?: number;
   followUpTasks?: number;
   reportId?: string;
@@ -183,6 +193,16 @@ async function loadContext(agentId: string, taskId?: string): Promise<AgentConte
       rateTokensPerMin: agentRow.rate_tokens_per_min ?? 1500,
       nextRunAt: agentRow.next_run_at ?? null,
       consecutiveFailures: agentRow.consecutive_failures ?? 0,
+      instructions: agentRow.instructions ?? null,
+      focus: agentRow.focus ?? null,
+      workingHoursStart: agentRow.working_hours_start ?? null,
+      workingHoursEnd: agentRow.working_hours_end ?? null,
+      workingDays: agentRow.working_days ?? null,
+      timezone: agentRow.timezone ?? "UTC",
+      maxTokensPerRun: agentRow.max_tokens_per_run ?? 12000,
+      dailyTokenBudget: agentRow.daily_token_budget ?? null,
+      tokensSpentToday: agentRow.tokens_spent_today ?? 0,
+      tokensTodayDate: agentRow.tokens_today_date ?? null,
     },
     project: {
       id: project.id,
@@ -283,6 +303,15 @@ async function buildPrompt(ctx: AgentContext): Promise<ChatMsg[]> {
   // The business brief + goals — what makes each agent understand the business.
   const businessContext = buildBusinessContext(ctx);
 
+  // Owner-defined rules and scope — the user's customization of HOW this agent
+  // works and WHAT it may touch. Rules outrank defaults; scope is a hard fence.
+  const rulesContext = ctx.agent.instructions?.trim()
+    ? `\n\n## Owner rules for this agent — follow on EVERY run, they override any default behavior\n${ctx.agent.instructions.trim()}`
+    : "";
+  const focusContext = ctx.agent.focus?.trim()
+    ? `\n\n## Scope\nWork ONLY within this scope: ${ctx.agent.focus.trim()}\nDo not modify or produce anything outside it.`
+    : "";
+
   const userMessage =
     ctx.task?.detail ||
     ctx.task?.title ||
@@ -293,7 +322,14 @@ async function buildPrompt(ctx: AgentContext): Promise<ChatMsg[]> {
   return [
     {
       role: "user",
-      content: userMessage + businessContext + schemaContext + fileContext + taskContext,
+      content:
+        userMessage +
+        rulesContext +
+        focusContext +
+        businessContext +
+        schemaContext +
+        fileContext +
+        taskContext,
     },
   ];
 }
@@ -307,7 +343,10 @@ async function executeAgent(ctx: AgentContext): Promise<{
   const isCodeRole = ["developer", "qa", "design", "ops"].includes(ctx.agent.role);
   // Bounded per-cycle budget + explicit reasoning level — without these, GLM
   // runs at max reasoning against a tiny default cap and produces nothing.
-  const OPTS = { maxTokens: 12_000, reasoningEffort: "high" } as const;
+  // The cap is the owner's per-run setting, clamped to a range that both
+  // finishes in time and can't be set to something useless.
+  const perRunCap = Math.min(16_000, Math.max(2_000, ctx.agent.maxTokensPerRun || 12_000));
+  const OPTS = { maxTokens: perRunCap, reasoningEffort: "high" } as const;
   let tokensUsed = 0;
 
   if (!isCodeRole) {
@@ -317,7 +356,7 @@ async function executeAgent(ctx: AgentContext): Promise<{
 
     const result = await completeAstraText(
       [{ ...messages[0], role: "user", content: prompt + "\n" + messages[0].content }],
-      { maxTokens: 2_500, reasoningEffort: "high" },
+      { maxTokens: Math.min(2_500, perRunCap), reasoningEffort: "high" },
     );
     if (!result.ok) throw new Error(`Astra error: ${result.detail}`);
     tokensUsed += (result.usage?.inputTokens ?? 0) + (result.usage?.outputTokens ?? 0);
@@ -342,7 +381,7 @@ async function executeAgent(ctx: AgentContext): Promise<{
   tokensUsed += (response.usage?.inputTokens ?? 0) + (response.usage?.outputTokens ?? 0);
 
   // Parse and validate
-  let plan = parseFilePatchPlan(response.text);
+  const plan = parseFilePatchPlan(response.text);
   if (!plan) {
     return {
       plan: "No file changes detected",
@@ -352,13 +391,28 @@ async function executeAgent(ctx: AgentContext): Promise<{
     };
   }
 
-  // Apply patches to create modified file list
+  // Apply patches to create modified file list. Deterministic hardening
+  // (bare-import normalization, BrowserRouter → HashRouter) runs before
+  // validation so unambiguous bugs never waste the repair pass.
+  const finalize = (files: ProjectFile[]) =>
+    stubDanglingImports(hardenGeneratedFiles(normalizeProjectImports(files).files).files)
+      .files;
+
   const modified = applyPatchPlan(ctx.files, plan);
-  let issues = detectFatalIssues(plan, modified, false);
+  const issues = detectFatalIssues(plan, modified, false);
+  // Design lint rides along on the same single repair pass — an agent cycle
+  // that ships emoji, hardcoded hex colors, or raw anchors gets one shot at
+  // cleaning it up. Only FATAL issues can fail the run afterwards.
+  const designIssues = detectDesignIssues(plan, false);
 
   // One automatic repair pass
-  if (issues.length > 0) {
-    const issueDesc = describeFatalIssues(issues);
+  if (issues.length > 0 || designIssues.length > 0) {
+    const issueDesc = [
+      issues.length ? describeFatalIssues(issues) : "",
+      designIssues.length ? describeDesignIssues(designIssues) : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
     const repairMessages: ChatMsg[] = [
       { role: "system", content: buildRepairPrompt(issueDesc) },
       ...messages,
@@ -369,24 +423,45 @@ async function executeAgent(ctx: AgentContext): Promise<{
     tokensUsed +=
       (repairResult.usage?.inputTokens ?? 0) + (repairResult.usage?.outputTokens ?? 0);
 
-    plan = parseFilePatchPlan(repairResult.text);
-    if (!plan) throw new Error("Repair produced no valid patches");
+    const repairedPlan = parseFilePatchPlan(repairResult.text);
+    // The repair may come back worse than the original (or not at all). Fall
+    // back to the best VALID candidate instead of throwing the work away:
+    // an original with only design nits is still shippable.
+    const fallbackOk = issues.length === 0;
+    if (!repairedPlan) {
+      if (!fallbackOk) throw new Error("Repair produced no valid patches");
+      return {
+        plan: plan.plan,
+        changedFiles: finalize(modified),
+        reportContent: `Applied changes:\n${plan.plan}`,
+        tokensUsed,
+      };
+    }
 
-    const repaired = applyPatchPlan(ctx.files, plan);
-    issues = detectFatalIssues(plan, repaired, false);
-    if (issues.length > 0) throw new Error(`Repair still has issues: ${describeFatalIssues(issues)}`);
+    const repaired = applyPatchPlan(ctx.files, repairedPlan);
+    const repairedIssues = detectFatalIssues(repairedPlan, repaired, false);
+    if (repairedIssues.length > 0) {
+      if (!fallbackOk)
+        throw new Error(`Repair still has issues: ${describeFatalIssues(repairedIssues)}`);
+      return {
+        plan: plan.plan,
+        changedFiles: finalize(modified),
+        reportContent: `Applied changes:\n${plan.plan}`,
+        tokensUsed,
+      };
+    }
 
     return {
-      plan: plan.plan,
-      changedFiles: stubDanglingImports(repaired).files,
-      reportContent: `Repaired and applied changes:\n${plan.plan}`,
+      plan: repairedPlan.plan,
+      changedFiles: finalize(repaired),
+      reportContent: `Repaired and applied changes:\n${repairedPlan.plan}`,
       tokensUsed,
     };
   }
 
   return {
     plan: plan.plan,
-    changedFiles: stubDanglingImports(modified).files,
+    changedFiles: finalize(modified),
     reportContent: `Applied changes:\n${plan.plan}`,
     tokensUsed,
   };
@@ -461,6 +536,12 @@ export async function runAgentTask(
   agentId: string,
   taskId?: string,
   requesterId?: string,
+  opts?: {
+    /** True when the scheduler (cron/tick) triggered this run — working-hours
+     *  windows apply. Manual "Run now" clicks bypass hours (the owner is right
+     *  there asking) but never the daily token budget. */
+    ambient?: boolean;
+  },
 ): Promise<RunAgentTaskResult> {
   try {
     // Load context
@@ -478,6 +559,40 @@ export async function runAgentTask(
     // If no task and not code-generating, nothing to do
     if (!ctx.task && !["developer", "qa", "design", "ops"].includes(ctx.agent.role)) {
       return { ok: false, error: "No task queued for this agent" };
+    }
+
+    const now = new Date();
+
+    // ── Working hours ────────────────────────────────────────────────────────
+    // Ambient cycles only run inside the owner's configured window. A skip is
+    // NOT a failure: park next_run_at at the window's next opening and leave.
+    if (opts?.ambient && !isWithinWorkingHours(ctx.agent, now)) {
+      const resume = nextWorkingWindowStart(ctx.agent, now);
+      await ctx.supabase
+        .from("agents")
+        .update({ next_run_at: resume.toISOString() })
+        .eq("id", ctx.agent.id);
+      return { ok: true, skipped: "outside_working_hours" };
+    }
+
+    // ── Daily token budget ───────────────────────────────────────────────────
+    // Hard cap on tokens/day, enforced for ambient AND manual runs. The counter
+    // rolls over by UTC date; when exhausted, the loop sleeps to next midnight.
+    const today = now.toISOString().slice(0, 10);
+    const spentToday = ctx.agent.tokensTodayDate === today ? ctx.agent.tokensSpentToday : 0;
+    if (ctx.agent.dailyTokenBudget && spentToday >= ctx.agent.dailyTokenBudget) {
+      const midnight = new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1),
+      );
+      await ctx.supabase
+        .from("agents")
+        .update({ next_run_at: midnight.toISOString() })
+        .eq("id", ctx.agent.id);
+      if (opts?.ambient) return { ok: true, skipped: "daily_token_budget" };
+      return {
+        ok: false,
+        error: `This agent hit its daily token budget (${ctx.agent.dailyTokenBudget.toLocaleString()} tokens). It resumes at midnight UTC, or raise the budget in its settings.`,
+      };
     }
 
     // ── Credit budget ────────────────────────────────────────────────────────
@@ -552,13 +667,26 @@ export async function runAgentTask(
     // cycles reset the failure counter.
     const rate = Math.max(200, ctx.agent.rateTokensPerMin);
     const delayMinutes = Math.max(1, Math.ceil(tokensUsed / rate));
+    // Throttle-scheduled next run — but never inside a closed working window,
+    // and never past an exhausted daily budget (sleep to UTC midnight instead).
+    let nextRun = new Date(Date.now() + delayMinutes * 60_000);
+    const newSpentToday = spentToday + tokensUsed;
+    if (ctx.agent.dailyTokenBudget && newSpentToday >= ctx.agent.dailyTokenBudget) {
+      nextRun = new Date(
+        Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1),
+      );
+    } else if (!isWithinWorkingHours(ctx.agent, nextRun)) {
+      nextRun = nextWorkingWindowStart(ctx.agent, nextRun);
+    }
     await ctx.supabase
       .from("agents")
       .update({
         last_run_at: new Date().toISOString(),
         spent_cents: ctx.agent.spentCents + creditsSpent,
-        next_run_at: new Date(Date.now() + delayMinutes * 60_000).toISOString(),
+        next_run_at: nextRun.toISOString(),
         consecutive_failures: 0,
+        tokens_spent_today: newSpentToday,
+        tokens_today_date: today,
         memory: {
           lastTask: ctx.task?.id,
           lastChangedFiles: changedFiles.map((f) => f.path),

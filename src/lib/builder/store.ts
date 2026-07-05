@@ -22,6 +22,11 @@ import {
   stubDanglingImports,
   normalizeProjectImports,
 } from "./file-patches";
+import {
+  hardenGeneratedFiles,
+  detectDesignIssues,
+  describeDesignIssues,
+} from "./design-lint";
 import { createBaseTemplate } from "./base-template";
 import { DEFAULT_MODEL_TIER, type ModelTierId } from "./model-tiers";
 import {
@@ -529,12 +534,27 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       let appWritten =
         !wasFirstBuild ||
         (plan?.changes.some((c) => c.path === "src/App.tsx") ?? false);
+      // Design QA is a single bounded extra pass — never a loop.
+      let designPassDone = false;
       for (let pass = 0; plan && pass < MAX_FINISH_PASSES; pass++) {
         if (plan.changes.some((c) => c.path === "src/App.tsx")) appWritten = true;
         const issues = detectFatalIssues(plan, get().projectFiles, wasFirstBuild);
+        // Once structurally sound, run the design review ONCE: emoji in UI,
+        // hardcoded hex colors, placeholder fonts, raw anchors — the
+        // "compiles fine, looks broken" class of bug.
+        let designNote = "";
+        if (!issues.length && appWritten && !designPassDone) {
+          designPassDone = true;
+          const designIssues = detectDesignIssues(plan, wasFirstBuild);
+          if (designIssues.length) {
+            designNote =
+              "The app builds, but a design review found these violations of the design contract. Fix ALL of them, changing only the files named:\n" +
+              describeDesignIssues(designIssues);
+          }
+        }
         // Incomplete if imports dangle (missing files) OR a first build hasn't
         // written its App.tsx yet (it was cut off before wiring the app up).
-        if (!issues.length && appWritten) break; // complete — apply happens below
+        if (!issues.length && appWritten && !designNote) break; // complete — apply happens below
 
         // Commit what we have so the next pass builds ON it (edit mode), and
         // persist it so a refresh keeps the partial app instead of losing it.
@@ -542,19 +562,21 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         // a Stop or refresh mid-continuation must never leave App.tsx importing
         // pages that don't exist yet ("Could not find module" preview crash).
         const safePartial = stubDanglingImports(
-          normalizeProjectImports(applyPatchPlan(get().projectFiles, plan)).files,
+          hardenGeneratedFiles(
+            normalizeProjectImports(applyPatchPlan(get().projectFiles, plan)).files,
+          ).files,
         ).files;
         partialApplied = true;
         set({
           projectFiles: safePartial,
           isFirstBuild: false,
           phase: "thinking",
-          streamingText: "Finishing the build…",
+          streamingText: designNote ? "Polishing the design…" : "Finishing the build…",
         });
         persist(get().projectId, get().projectFiles, get().messages);
         const note = !appWritten
           ? "The app is only partially built. Continue building it: create every file still missing — START with src/App.tsx wiring HashRouter routes for all pages, then each page and component referenced but not yet created. Keep all existing files intact; output ONLY the files still missing or broken, as a <file_patches> block."
-          : describeFatalIssues(issues);
+          : designNote || describeFatalIssues(issues);
         const nextFull = await runBuild(note);
         const nextPlan = parseFilePatchPlan(nextFull);
         if (!nextPlan) break; // continuation produced nothing usable — keep what we applied
@@ -612,7 +634,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       // preview always renders (a visible "still being built" page beats a
       // "Could not find module" crash).
       const { files: nextFiles, stubbed } = stubDanglingImports(
-        normalizeProjectImports(applyPatchPlan(get().projectFiles, plan)).files,
+        hardenGeneratedFiles(
+          normalizeProjectImports(applyPatchPlan(get().projectFiles, plan)).files,
+        ).files,
       );
       // Track both full-file writes and surgical edits as "changed".
       const changedPaths = Array.from(

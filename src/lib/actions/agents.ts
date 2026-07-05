@@ -37,6 +37,16 @@ function mapAgent(r: any): Agent {
     rateTokensPerMin: r.rate_tokens_per_min ?? 1500,
     nextRunAt: r.next_run_at ?? null,
     consecutiveFailures: r.consecutive_failures ?? 0,
+    instructions: r.instructions ?? null,
+    focus: r.focus ?? null,
+    workingHoursStart: r.working_hours_start ?? null,
+    workingHoursEnd: r.working_hours_end ?? null,
+    workingDays: r.working_days ?? null,
+    timezone: r.timezone ?? "UTC",
+    maxTokensPerRun: r.max_tokens_per_run ?? 12000,
+    dailyTokenBudget: r.daily_token_budget ?? null,
+    tokensSpentToday: r.tokens_spent_today ?? 0,
+    tokensTodayDate: r.tokens_today_date ?? null,
   };
 }
 
@@ -214,6 +224,34 @@ export interface DeployAgentInput {
   loopEnabled?: boolean;
   /** Burn-rate cap in tokens/minute. Lower = slower, cheaper, safer. */
   rateTokensPerMin?: number;
+  /** Owner-written rules the agent must follow every run. */
+  instructions?: string;
+  /** Scope — what the agent works on inside the project. */
+  focus?: string;
+  /** Local start hour [0..23] of the working window (null = always on). */
+  workingHoursStart?: number | null;
+  /** Local end hour (exclusive) of the working window. */
+  workingHoursEnd?: number | null;
+  /** Working days, 0=Sun..6=Sat. Empty/undefined = every day. */
+  workingDays?: number[] | null;
+  /** IANA timezone the working hours are interpreted in. */
+  timezone?: string;
+  /** Hard output-token cap per cycle. */
+  maxTokensPerRun?: number;
+  /** Total tokens/day (null = unlimited). */
+  dailyTokenBudget?: number | null;
+}
+
+/** Clamp an hour input to a valid 0–23 value, or null when unset. */
+function clampHour(h: number | null | undefined): number | null {
+  if (h == null || Number.isNaN(h)) return null;
+  return Math.min(23, Math.max(0, Math.round(h)));
+}
+
+/** Only keep valid weekday indexes; null when the list is empty (= every day). */
+function cleanDays(days: number[] | null | undefined): number[] | null {
+  const cleaned = (days ?? []).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6);
+  return cleaned.length ? Array.from(new Set(cleaned)).sort() : null;
 }
 
 /**
@@ -244,6 +282,17 @@ export async function deployAgent(input: DeployAgentInput): Promise<{ ok: boolea
       loop_enabled: input.loopEnabled ?? false,
       rate_tokens_per_min: input.rateTokensPerMin ?? 1500,
       next_run_at: input.loopEnabled ? new Date().toISOString() : null,
+      instructions: input.instructions?.trim() || null,
+      focus: input.focus?.trim() || null,
+      working_hours_start: clampHour(input.workingHoursStart),
+      working_hours_end: clampHour(input.workingHoursEnd),
+      working_days: cleanDays(input.workingDays),
+      timezone: input.timezone?.trim() || "UTC",
+      max_tokens_per_run: Math.min(16000, Math.max(2000, input.maxTokensPerRun ?? 12000)),
+      daily_token_budget:
+        input.dailyTokenBudget && input.dailyTokenBudget > 0
+          ? Math.round(input.dailyTokenBudget)
+          : null,
     })
     .select("id, name")
     .single();
@@ -340,6 +389,91 @@ export async function setAgentLoop(
     message: loopEnabled
       ? `${data.name} started looping ambiently on the ren branch.`
       : `${data.name}'s ambient loop was stopped.`,
+  });
+
+  revalidatePath("/dashboard/agents");
+  revalidatePath(`/dashboard/agents/${agentId}`);
+  return { ok: true };
+}
+
+export interface AgentSettingsInput {
+  name?: string;
+  goal?: string;
+  instructions?: string;
+  focus?: string;
+  schedule?: AgentSchedule;
+  budgetCents?: number;
+  loopEnabled?: boolean;
+  rateTokensPerMin?: number;
+  workingHoursStart?: number | null;
+  workingHoursEnd?: number | null;
+  workingDays?: number[] | null;
+  timezone?: string;
+  maxTokensPerRun?: number;
+  dailyTokenBudget?: number | null;
+}
+
+/**
+ * Update everything the owner can customize about an agent in one call: what
+ * it works on (goal/focus), the rules it follows (instructions), its working
+ * hours, and its token consumption caps. Only provided fields change.
+ */
+export async function updateAgentSettings(
+  agentId: string,
+  input: AgentSettingsInput,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!isSupabaseConfigured()) return { ok: false, error: "Supabase not configured." };
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (input.name !== undefined) patch.name = input.name.trim() || "Agent";
+  if (input.goal !== undefined) patch.goal = input.goal.trim() || null;
+  if (input.instructions !== undefined) patch.instructions = input.instructions.trim() || null;
+  if (input.focus !== undefined) patch.focus = input.focus.trim() || null;
+  if (input.schedule !== undefined) patch.schedule = input.schedule;
+  if (input.budgetCents !== undefined) patch.budget_cents = Math.max(0, Math.round(input.budgetCents));
+  if (input.rateTokensPerMin !== undefined)
+    patch.rate_tokens_per_min = Math.max(200, Math.round(input.rateTokensPerMin));
+  if (input.workingHoursStart !== undefined)
+    patch.working_hours_start = clampHour(input.workingHoursStart);
+  if (input.workingHoursEnd !== undefined)
+    patch.working_hours_end = clampHour(input.workingHoursEnd);
+  if (input.workingDays !== undefined) patch.working_days = cleanDays(input.workingDays);
+  if (input.timezone !== undefined) patch.timezone = input.timezone.trim() || "UTC";
+  if (input.maxTokensPerRun !== undefined)
+    patch.max_tokens_per_run = Math.min(16000, Math.max(2000, Math.round(input.maxTokensPerRun)));
+  if (input.dailyTokenBudget !== undefined)
+    patch.daily_token_budget =
+      input.dailyTokenBudget && input.dailyTokenBudget > 0
+        ? Math.round(input.dailyTokenBudget)
+        : null;
+  if (input.loopEnabled !== undefined) {
+    patch.loop_enabled = input.loopEnabled;
+    if (input.loopEnabled) {
+      patch.next_run_at = new Date().toISOString();
+      patch.consecutive_failures = 0;
+    }
+  }
+
+  const { data, error } = await supabase
+    .from("agents")
+    .update(patch)
+    .eq("id", agentId)
+    .eq("user_id", user.id)
+    .select("name, project_id")
+    .single();
+
+  if (error || !data) return { ok: false, error: error?.message ?? "Update failed." };
+
+  await logActivity({
+    projectId: data.project_id,
+    agentId,
+    kind: "agent_status",
+    message: `${data.name}'s configuration was updated.`,
   });
 
   revalidatePath("/dashboard/agents");

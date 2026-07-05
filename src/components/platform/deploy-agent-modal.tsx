@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Plus, Rocket, X } from "lucide-react";
+import { ChevronDown, Loader2, Plus, Rocket, X } from "lucide-react";
 import { toast } from "sonner";
 import { deployAgent } from "@/lib/actions/agents";
+import { DayPicker, HourSelect } from "@/components/platform/agent-settings-modal";
 import {
   ROLE_LIST,
   ROLE_PRESETS,
@@ -91,6 +92,19 @@ function DeployModal({
   const [schedule, setSchedule] = useState<AgentSchedule>("manual");
   const [budget, setBudget] = useState("5");
   const [pending, setPending] = useState(false);
+  // Advanced customization — rules, scope, working hours, token limits.
+  const [advanced, setAdvanced] = useState(false);
+  const [instructions, setInstructions] = useState("");
+  const [focus, setFocus] = useState("");
+  const [hoursStart, setHoursStart] = useState("");
+  const [hoursEnd, setHoursEnd] = useState("");
+  const [days, setDays] = useState<number[]>([]);
+  const [maxPerRun, setMaxPerRun] = useState("12000");
+  const [dailyBudget, setDailyBudget] = useState("");
+
+  function toggleDay(d: number) {
+    setDays((cur) => (cur.includes(d) ? cur.filter((x) => x !== d) : [...cur, d]));
+  }
 
   function pickRole(r: AgentRole) {
     setRole(r);
@@ -109,6 +123,14 @@ function DeployModal({
       goal,
       schedule,
       budgetCents: Math.max(0, Math.round(parseFloat(budget) || 0) * 100),
+      instructions,
+      focus,
+      workingHoursStart: hoursStart === "" ? null : Number(hoursStart),
+      workingHoursEnd: hoursEnd === "" ? null : Number(hoursEnd),
+      workingDays: days.length ? days : null,
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      maxTokensPerRun: parseInt(maxPerRun, 10) || 12000,
+      dailyTokenBudget: dailyBudget === "" ? null : parseInt(dailyBudget, 10) || null,
     });
     setPending(false);
     if (res.ok) {
@@ -240,6 +262,75 @@ function DeployModal({
               />
             </div>
           </div>
+
+          {/* Advanced customization */}
+          <button
+            type="button"
+            onClick={() => setAdvanced((a) => !a)}
+            className="flex w-full items-center justify-between rounded-lg border border-carbon-line bg-carbon px-3 py-2.5 text-[12.5px] text-dusk-muted transition-colors hover:border-carbon-line-strong hover:text-dusk"
+          >
+            <span>Rules, working hours &amp; token limits</span>
+            <ChevronDown className={cn("size-4 transition-transform", advanced && "rotate-180")} />
+          </button>
+
+          {advanced && (
+            <div className="space-y-4 rounded-xl border border-carbon-line bg-carbon p-4">
+              <div>
+                <Label>Scope — what it may touch</Label>
+                <input
+                  value={focus}
+                  onChange={(e) => setFocus(e.target.value)}
+                  className={cn(INPUT, "mt-2")}
+                  placeholder='e.g. "only the checkout flow"'
+                />
+              </div>
+              <div>
+                <Label>Rules — followed on every run</Label>
+                <textarea
+                  value={instructions}
+                  onChange={(e) => setInstructions(e.target.value)}
+                  rows={3}
+                  className={cn(INPUT, "mt-2 resize-none")}
+                  placeholder={"One rule per line, e.g.\nNever remove existing features.\nAlways keep the design tokens."}
+                />
+              </div>
+              <div>
+                <Label>Working hours (your timezone)</Label>
+                <div className="mt-2 grid grid-cols-2 gap-3">
+                  <HourSelect value={hoursStart} onChange={setHoursStart} anyLabel="Any start" />
+                  <HourSelect value={hoursEnd} onChange={setHoursEnd} anyLabel="Any end" />
+                </div>
+                <div className="mt-2.5">
+                  <DayPicker days={days} onToggle={toggleDay} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Max tokens / run</Label>
+                  <select
+                    value={maxPerRun}
+                    onChange={(e) => setMaxPerRun(e.target.value)}
+                    className={cn(INPUT, "mt-2 appearance-none")}
+                  >
+                    <option value="4000">4,000 — light</option>
+                    <option value="8000">8,000 — standard</option>
+                    <option value="12000">12,000 — heavy</option>
+                    <option value="16000">16,000 — max</option>
+                  </select>
+                </div>
+                <div>
+                  <Label>Daily token budget</Label>
+                  <input
+                    value={dailyBudget}
+                    onChange={(e) => setDailyBudget(e.target.value.replace(/[^0-9]/g, ""))}
+                    inputMode="numeric"
+                    className={cn(INPUT, "mt-2")}
+                    placeholder="Unlimited"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center justify-end gap-2 border-t border-carbon-line px-5 py-3.5">
