@@ -32,6 +32,7 @@ import {
   buildArchitectPrompt,
 } from "@/lib/builder/prompts";
 import { detectRepoStack } from "@/lib/builder/repo-stack";
+import { heuristicRepoProfile } from "@/lib/builder/repo-preview-intel";
 import {
   buildRepositoryIntelligence,
   formatIntelligenceForPrompt,
@@ -166,7 +167,11 @@ export async function POST(req: NextRequest) {
   // the codebase: detected stack + run commands, plus a full intelligence map
   // (architecture scope, entrypoints, file breakdown, and risks).
   const repoSystem = () => {
-    const stackPrompt = buildRepoImportPrompt(detectRepoStack(files));
+    // The preview profile tells Astra what KIND of repo this is (frontend vs
+    // Python/Java/Go backend vs library) so it works in the native language
+    // and knows the add-a-frontend playbook for console-mode projects.
+    const profile = heuristicRepoProfile(files);
+    const stackPrompt = buildRepoImportPrompt(detectRepoStack(files), profile);
     const intel = buildRepositoryIntelligence(files.map((f) => f.path));
     return `${stackPrompt}\n\n${formatIntelligenceForPrompt(intel)}`;
   };

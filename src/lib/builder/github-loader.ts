@@ -23,8 +23,27 @@ const SKIP_DIRS = [
   ".turbo/",
 ];
 
+// Web source AND backend languages — an attached Python/Java/Go/Rust repo must
+// load its real source so the intelligence layer can classify it and Astra can
+// read and edit it. Binary formats stay excluded.
 const TEXT_EXT =
-  /\.(tsx?|jsx?|css|scss|sass|less|html|json|md|mdx|svg|txt|yml|yaml|toml|env|gitignore|prisma|graphql|mjs|cjs|vue|svelte|astro)$/i;
+  /\.(tsx?|jsx?|css|scss|sass|less|html|json|md|mdx|svg|txt|yml|yaml|toml|env|gitignore|prisma|graphql|mjs|cjs|vue|svelte|astro|py|java|kts?|go|rs|rb|php|cs|swift|scala|c|h|cpp|hpp|cc|sql|sh|bash|gradle|properties|xml|ini|cfg|conf|proto|tf|dockerfile|ru|erb|ex|exs)$/i;
+
+// Manifest/config files that matter even without a matching extension.
+const KEEP_BASENAMES = new Set([
+  "dockerfile",
+  "makefile",
+  "procfile",
+  "gemfile",
+  "rakefile",
+  "cmakelists.txt",
+  "go.mod",
+  "go.sum",
+  "cargo.toml",
+  "requirements.txt",
+  "pipfile",
+  "gradlew",
+]);
 
 interface GitTreeItem {
   path: string;
@@ -40,6 +59,8 @@ function isSkippable(path: string): boolean {
   if (path.endsWith("package-lock.json") || path.endsWith("pnpm-lock.yaml") || path.endsWith("yarn.lock")) {
     return true;
   }
+  const basename = path.split("/").pop()?.toLowerCase() ?? "";
+  if (KEEP_BASENAMES.has(basename)) return false;
   return !TEXT_EXT.test(path);
 }
 

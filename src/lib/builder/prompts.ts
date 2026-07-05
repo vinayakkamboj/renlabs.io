@@ -9,6 +9,7 @@
 
 import { PROJECT_MEMORY_FILE } from "./base-template";
 import type { RepoStackInfo } from "./repo-stack";
+import type { RepoPreviewProfile } from "./repo-preview-intel";
 
 const STACK = `## Stack (fixed — do not change the toolchain)
 - React 18 + Vite + TypeScript.
@@ -439,9 +440,15 @@ Deliver a complete, integrated change. Identify every file the change touches (p
 /**
  * System prompt for an imported GitHub repository. Replaces the hardcoded
  * Vite/CDN-Tailwind STACK section with the real detected framework and run
- * commands so Astra follows the right file conventions.
+ * commands so Astra follows the right file conventions. When the repository
+ * has no web frontend (Python API, Java service, CLI, library), the optional
+ * preview profile adds a backend-aware working mode and the playbook for
+ * adding a frontend on request.
  */
-export function buildRepoImportPrompt(stack: RepoStackInfo): string {
+export function buildRepoImportPrompt(
+  stack: RepoStackInfo,
+  profile?: RepoPreviewProfile,
+): string {
   const tailwindNote = stack.hasTailwind
     ? "Tailwind CSS is already set up via PostCSS/config — use standard `@tailwind` imports, NOT the Play CDN tag."
     : "No Tailwind detected. Use whatever styling approach the existing codebase uses.";
@@ -454,17 +461,53 @@ export function buildRepoImportPrompt(stack: RepoStackInfo): string {
     ? `\n## Repository README (excerpt)\n\`\`\`\n${stack.readmeExcerpt}\n\`\`\`\n`
     : "";
 
-  return `You are Ren Code, an autonomous engineer working on an EXISTING ${stack.framework} repository imported from GitHub. Read the current project files carefully before making any change.
+  // Backend-aware working mode. Without this, Astra treats a Python API or a
+  // Java service like a React app and produces nonsense.
+  const backendSection =
+    profile && profile.previewMode === "console"
+      ? `
+## Project type — ${profile.language} ${profile.kind} (no browser preview)
+
+${profile.summary}
+
+This project runs OUTSIDE the browser (entry: ${profile.entryPoint ?? "see manifest"}; run: ${profile.runCommands.join(" && ") || "see README"}). Work in its native language and idioms:
+
+- Write ${profile.language} the way this codebase already writes it — its formatting, naming, error handling, and library choices. Never inject React/JSX/Tailwind into backend files.
+- Changes must be COMPILABLE/RUNNABLE: valid syntax for ${profile.language}, imports that exist in the project or its declared dependencies, signatures that match call sites.
+- There is no live preview for this project, so your explanation in chat carries more weight: state clearly WHAT you changed and how the user can run/verify it locally (use the run commands above).
+
+### If the user asks to ADD A FRONTEND
+1. Create a self-contained client-side React app under \`frontend/\` — Vite-style layout (\`frontend/index.html\`, \`frontend/src/App.tsx\`, \`frontend/src/main.tsx\`, …). Do NOT modify or move existing ${profile.language} files to make room for it.
+2. Read the backend first: its routes/handlers/models define the frontend's data shapes. Mirror the REAL request/response types in \`frontend/src/data/types.ts\`.
+3. Where live data would come from the backend, use realistic typed mock data matching those shapes, wired through a single API layer (\`frontend/src/lib/api.ts\`) so swapping mocks for real fetch calls later is one-file work.
+4. The full design contract applies to the frontend: real fonts, one bold accent, editorial layouts — the same standard as any new Ren build.
+`
+      : "";
+
+  // detectRepoStack is JS-ecosystem oriented; for console-mode (backend) repos
+  // the intelligence profile's language/framework is the truthful label.
+  const isConsoleRepo = profile?.previewMode === "console";
+  const frameworkLabel = isConsoleRepo ? profile!.framework : stack.framework;
+  const languageLabel = isConsoleRepo
+    ? profile!.language
+    : stack.hasTypeScript
+      ? "TypeScript"
+      : "JavaScript";
+  const runSection = isConsoleRepo
+    ? profile!.runCommands.map((c) => `- \`${c}\``).join("\n") || "- (see README)"
+    : `- Dev server: \`${stack.devCommand}\`\n- Build: \`${stack.buildCommand}\`${stack.startCommand ? `\n- Start (prod): \`${stack.startCommand}\`` : ""}`;
+
+  return `You are Ren Code, an autonomous engineer working on an EXISTING ${frameworkLabel} repository imported from GitHub. Read the current project files carefully before making any change.
+${backendSection}
 ${readmeSection}
 ## Detected stack
-- Framework: **${stack.framework}**
-- Language: **${stack.hasTypeScript ? "TypeScript" : "JavaScript"}**
-- Styling: ${tailwindNote}
-- Routing: ${stack.routingConvention}
+- Framework: **${frameworkLabel}**
+- Language: **${languageLabel}**
+- Styling: ${isConsoleRepo ? "Follow the existing codebase's conventions." : tailwindNote}
+- Routing: ${isConsoleRepo ? "Not a browser-routed app." : stack.routingConvention}
 
 ## Run commands
-- Dev server: \`${stack.devCommand}\`
-- Build: \`${stack.buildCommand}\`${stack.startCommand ? `\n- Start (prod): \`${stack.startCommand}\`` : ""}
+${runSection}
 
 ## Available scripts
 \`\`\`

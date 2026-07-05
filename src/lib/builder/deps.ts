@@ -106,11 +106,26 @@ export function detectEntry(files: ProjectFile[]): string {
     if (m) {
       const src = m[1].replace(/^\.?\//, "");
       if (has(src)) return "/" + src;
+      // Resolve relative to the html file's own directory (nested app shells
+      // like frontend/index.html referencing ./src/main.tsx).
+      const dir = html.path.includes("/")
+        ? html.path.slice(0, html.path.lastIndexOf("/") + 1)
+        : "";
+      if (dir && has(dir + src)) return "/" + dir + src;
     }
   }
 
   for (const c of ENTRY_CANDIDATES) {
     if (has(c)) return "/" + c;
   }
+
+  // Nested client app (e.g. frontend/src/main.tsx added next to a backend) —
+  // pick the shallowest main/index source file anywhere in the tree.
+  const nested = files
+    .map((f) => f.path)
+    .filter((p) => /(^|\/)(main|index)\.(tsx|jsx)$/.test(p))
+    .sort((a, b) => a.split("/").length - b.split("/").length)[0];
+  if (nested) return "/" + nested;
+
   return "/src/main.tsx";
 }

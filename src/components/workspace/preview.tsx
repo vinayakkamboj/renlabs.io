@@ -7,7 +7,7 @@
  * console output and the installed dependency list.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   SandpackProvider,
   SandpackPreview as SandpackPreviewPane,
@@ -17,14 +17,22 @@ import {
 import {
   ChevronDown,
   ChevronUp,
+  Code2,
+  FileCode2,
   Github,
   Loader2,
   Package,
   ScanSearch,
+  Sparkles,
   Terminal,
 } from "lucide-react";
 import { collectDependencies, detectEntry } from "@/lib/builder/deps";
-import { analyzeWebApp, type WebAppAnalysis } from "@/lib/builder/web-app";
+import {
+  heuristicRepoProfile,
+  repoContentHash,
+  type RepoPreviewProfile,
+} from "@/lib/builder/repo-preview-intel";
+import { useWorkspaceStore } from "@/lib/builder/store";
 import { ReadmeViewer } from "@/components/workspace/readme-viewer";
 import type { ProjectFile } from "@/lib/builder/types";
 import { cn } from "@/lib/utils";
@@ -322,10 +330,44 @@ export function LivePreview({ projectFiles, viewerKey, projectKind, repoFilesLoa
 const ANALYSIS_STEPS = [
   "Reading project files",
   "Detecting framework & dependencies",
-  "Checking how the project is structured",
+  "Astra is analyzing the codebase",
   "Deciding how to run it",
 ];
 
+const PROFILE_CACHE_PREFIX = "ren:repo-profile:";
+
+/** Cached Astra verdict per file-set hash, so re-opening a project is instant
+ *  and the model isn't re-asked for an unchanged repo. */
+function readCachedProfile(hash: string): RepoPreviewProfile | null {
+  try {
+    const raw = localStorage.getItem(PROFILE_CACHE_PREFIX + hash);
+    if (!raw) return null;
+    return (JSON.parse(raw) as { profile: RepoPreviewProfile }).profile ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedProfile(hash: string, profile: RepoPreviewProfile) {
+  try {
+    localStorage.setItem(PROFILE_CACHE_PREFIX + hash, JSON.stringify({ profile, t: Date.now() }));
+  } catch {
+    /* storage full/unavailable — cache is best-effort */
+  }
+}
+
+/**
+ * The intelligence gate for attached repositories.
+ *
+ * Layered decision, no failure mode:
+ *   1. A deterministic heuristic profile is computed instantly (always valid).
+ *   2. Astra's analysis (/api/builder/analyze-repo) refines it — what the repo
+ *      is, whether it has a frontend, how to run it. Timeout / error / offline
+ *      all silently resolve to the heuristic profile.
+ *   3. previewMode drives the surface: sandpack (live app), static (served
+ *      site), or console (backend/library — code console + run commands +
+ *      "want a frontend?" offer).
+ */
 function RepoPreviewGate({
   projectFiles,
   viewerKey,
@@ -335,34 +377,75 @@ function RepoPreviewGate({
   viewerKey: number;
   repoFilesLoaded: boolean;
 }) {
-  const analysis = useMemo(() => analyzeWebApp(projectFiles), [projectFiles]);
-  const [analyzing, setAnalyzing] = useState(true);
+  const heuristic = useMemo(() => heuristicRepoProfile(projectFiles), [projectFiles]);
+  const hash = useMemo(() => repoContentHash(projectFiles), [projectFiles]);
+  const [profile, setProfile] = useState<RepoPreviewProfile | null>(null);
   const [step, setStep] = useState(0);
+  const hasProfileRef = useRef(false);
+  hasProfileRef.current = profile !== null;
 
   useEffect(() => {
-    // If files weren't loaded from GitHub, don't bother with the analysis animation.
-    if (!repoFilesLoaded) { setAnalyzing(false); return; }
-    setAnalyzing(true);
+    if (!repoFilesLoaded || !projectFiles.length) return;
+
+    const cached = readCachedProfile(hash);
+    if (cached) {
+      setProfile(cached);
+      return;
+    }
+
+    // First load: show the analysis screen. After edits (hash changed but we
+    // already have a profile) keep the current surface up and refine silently
+    // in the background — never blank a working preview to re-analyze.
+    if (!hasProfileRef.current) {
+      setProfile(null);
+    }
     setStep(0);
     const stepTimer = setInterval(() => {
       setStep((s) => Math.min(s + 1, ANALYSIS_STEPS.length - 1));
-    }, 420);
-    const doneTimer = setTimeout(() => {
-      clearInterval(stepTimer);
-      setAnalyzing(false);
-    }, 1500);
+    }, 900);
+
+    let alive = true;
+    (async () => {
+      let resolved = heuristic;
+      try {
+        const res = await fetch("/api/builder/analyze-repo", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          // Trim contents client-side too — the analysis reads structure and
+          // key files, it doesn't need megabytes of source.
+          body: JSON.stringify({
+            files: projectFiles.map((f) => ({
+              path: f.path,
+              content: f.content.slice(0, 4_000),
+            })),
+          }),
+          signal: AbortSignal.timeout(40_000),
+        });
+        if (res.ok) {
+          const data = (await res.json()) as { profile?: RepoPreviewProfile };
+          if (data.profile) resolved = data.profile;
+        }
+      } catch {
+        /* network/timeout — heuristic stands */
+      }
+      if (!alive) return;
+      writeCachedProfile(hash, resolved);
+      setProfile(resolved);
+    })();
+
     return () => {
+      alive = false;
       clearInterval(stepTimer);
-      clearTimeout(doneTimer);
     };
-  }, [viewerKey, projectFiles, repoFilesLoaded]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hash, repoFilesLoaded]);
 
   // GitHub session was missing or expired — files couldn't be loaded.
   if (!repoFilesLoaded) {
     return <RepoLoadFailed />;
   }
 
-  if (analyzing) {
+  if (!profile) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-5 bg-carbon px-6 text-center">
         <div className="flex size-12 items-center justify-center rounded-2xl bg-brass/10 ring-1 ring-brass/20">
@@ -391,38 +474,186 @@ function RepoPreviewGate({
     );
   }
 
-  if (analysis.status === "static") {
+  if (profile.previewMode === "static") {
     return (
       <StaticRunner
         projectFiles={projectFiles}
         viewerKey={viewerKey}
-        entryHtml={analysis.entryHtml ?? "index.html"}
+        entryHtml={profile.entryPoint ?? "index.html"}
       />
     );
   }
 
-  // Live preview available — run it.
-  if (analysis.status === "previewable") {
+  if (profile.previewMode === "sandpack") {
     return <SandpackRunner projectFiles={projectFiles} viewerKey={viewerKey} />;
   }
 
-  // Preview not available (fullstack framework, non-web, etc.).
-  // Show the README if the repo has one — it's the most useful thing we have.
+  // Console mode: backend / library / server-rendered — no browser preview.
+  return <RepoConsole profile={profile} projectFiles={projectFiles} />;
+}
+
+/**
+ * The "compiler" surface for repositories without a browser-runnable frontend:
+ * what the project is (Astra's summary), how to build and run it, and — when
+ * it has no frontend at all — the offer to have Astra add one.
+ */
+function RepoConsole({
+  profile,
+  projectFiles,
+}: {
+  profile: RepoPreviewProfile;
+  projectFiles: ProjectFile[];
+}) {
+  const sendMessage = useWorkspaceStore((s) => s.sendMessage);
+  const isBuilding = useWorkspaceStore((s) => s.isBuilding);
+  const [readmeOpen, setReadmeOpen] = useState(false);
   const readme = findReadme(projectFiles);
-  if (readme) {
-    const reason =
-      analysis.status === "fullstack"
-        ? `${analysis.framework} requires a server — live preview not available yet`
-        : "Live preview not available for this project type";
-    return (
-      <ReadmeViewer
-        content={readme.content}
-        previewUnavailableReason={reason}
-      />
+
+  function addFrontend() {
+    if (isBuilding) return;
+    void sendMessage(
+      `This repository is a ${profile.framework} ${profile.kind} with no web frontend. ` +
+        `Build a modern web frontend for it: read the existing code to understand its ` +
+        `data and features, then create a client-side React app (in a frontend/ directory, ` +
+        `without touching the existing ${profile.language} code) that presents and interacts ` +
+        `with what this project does. Use realistic mock data mirroring the real shapes ` +
+        `where a live backend would be required.`,
     );
   }
 
-  return <UnsupportedNotice analysis={analysis} />;
+  if (readmeOpen && readme) {
+    return (
+      <div className="flex h-full flex-col bg-carbon">
+        <div className="flex h-9 shrink-0 items-center justify-between border-b border-carbon-line px-3">
+          <span className="font-mono text-[10.5px] uppercase tracking-[0.12em] text-dusk-faint">
+            README
+          </span>
+          <button
+            onClick={() => setReadmeOpen(false)}
+            className="rounded px-2 py-0.5 text-[11.5px] text-dusk-muted transition-colors hover:bg-carbon-high hover:text-dusk"
+          >
+            Back to overview
+          </button>
+        </div>
+        <div className="min-h-0 flex-1">
+          <ReadmeViewer content={readme.content} />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="platform-scroll h-full overflow-y-auto bg-carbon">
+      <div className="mx-auto max-w-2xl space-y-4 p-6">
+        {/* Identity */}
+        <div className="flex items-start gap-3.5">
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-carbon-line bg-carbon-raised">
+            <Code2 className="size-5 text-brass" strokeWidth={1.7} />
+          </span>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Badge>{profile.language}</Badge>
+              {profile.framework !== profile.language && <Badge>{profile.framework}</Badge>}
+              <Badge tone="muted">{profile.kind}</Badge>
+            </div>
+            <p className="mt-2.5 text-[13.5px] leading-relaxed text-dusk">
+              {profile.summary}
+            </p>
+          </div>
+        </div>
+
+        {/* No-frontend offer */}
+        {!profile.hasFrontend && (
+          <div className="rounded-xl border border-brass/25 bg-brass/[0.06] p-4">
+            <div className="flex items-start gap-3">
+              <Sparkles className="mt-0.5 size-4 shrink-0 text-brass" />
+              <div className="min-w-0 flex-1">
+                <p className="text-[13.5px] font-medium text-dusk">
+                  Seems like your app doesn&apos;t have a frontend
+                </p>
+                <p className="mt-1 text-[12.5px] leading-relaxed text-dusk-muted">
+                  {profile.suggestFrontend
+                    ? "Astra can read this codebase and build a web interface for it — pages, views, and interactions on top of what the code already does."
+                    : "If you'd like a web interface on top of this code, Astra can build one."}
+                </p>
+                <button
+                  onClick={addFrontend}
+                  disabled={isBuilding}
+                  className="mt-3 flex items-center gap-1.5 rounded-lg bg-brass px-3.5 py-1.5 text-[12.5px] font-medium text-carbon transition-colors hover:bg-brass-deep disabled:opacity-50"
+                >
+                  {isBuilding ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Sparkles className="size-3.5" />
+                  )}
+                  {isBuilding ? "Astra is building…" : "Add a frontend with Astra"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Compiler / run panel */}
+        {profile.runCommands.length > 0 && (
+          <div className="overflow-hidden rounded-xl border border-carbon-line bg-carbon-raised">
+            <div className="flex h-8 items-center gap-2 border-b border-carbon-line px-3">
+              <Terminal className="size-3.5 text-dusk-faint" />
+              <span className="font-mono text-[10.5px] uppercase tracking-[0.12em] text-dusk-faint">
+                Build &amp; run
+              </span>
+            </div>
+            <div className="space-y-1 p-3 font-mono text-[12px]">
+              {profile.runCommands.map((cmd, i) => (
+                <div key={i} className="flex items-baseline gap-2">
+                  <span className="select-none text-brass">$</span>
+                  <span className="break-all text-dusk">{cmd}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Entry point + README */}
+        <div className="flex flex-wrap items-center gap-2">
+          {profile.entryPoint && (
+            <span className="flex items-center gap-1.5 rounded-lg border border-carbon-line bg-carbon-raised px-2.5 py-1.5 font-mono text-[11px] text-dusk-muted">
+              <FileCode2 className="size-3.5 text-dusk-faint" />
+              {profile.entryPoint}
+            </span>
+          )}
+          {readme && (
+            <button
+              onClick={() => setReadmeOpen(true)}
+              className="rounded-lg border border-carbon-line bg-carbon-raised px-2.5 py-1.5 text-[11.5px] text-dusk-muted transition-colors hover:border-brass/40 hover:text-brass"
+            >
+              View README
+            </button>
+          )}
+        </div>
+
+        <p className="text-[11.5px] leading-relaxed text-dusk-faint">
+          This project runs outside the browser, so there&apos;s no live preview —
+          Astra still reads and edits every file. Ask it to explain, refactor, or
+          extend anything here.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function Badge({ children, tone = "brass" }: { children: React.ReactNode; tone?: "brass" | "muted" }) {
+  return (
+    <span
+      className={cn(
+        "rounded-full px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.1em]",
+        tone === "brass"
+          ? "bg-brass/10 text-brass ring-1 ring-inset ring-brass/25"
+          : "bg-carbon-high text-dusk-muted",
+      )}
+    >
+      {children}
+    </span>
+  );
 }
 
 /** Find the most likely README file in the project files. */
@@ -509,30 +740,6 @@ function RepoLoadFailed() {
       >
         Go to Integrations
       </a>
-    </div>
-  );
-}
-
-function UnsupportedNotice({ analysis }: { analysis: WebAppAnalysis }) {
-  const nonWeb = analysis.status === "non-web";
-  return (
-    <div className="flex h-full flex-col items-center justify-center gap-4 bg-carbon px-8 text-center">
-      <div className="flex size-12 items-center justify-center rounded-2xl border border-carbon-line bg-carbon-raised">
-        <Package className="size-5 text-dusk-faint" />
-      </div>
-      <div className="max-w-[44ch]">
-        <p className="text-[15px] font-medium text-dusk">
-          {nonWeb
-            ? "Preview isn't available for this project"
-            : `Live preview for ${analysis.framework} is coming soon`}
-        </p>
-        <p className="mt-2 text-[13px] leading-relaxed text-dusk-muted">
-          {analysis.detail}
-        </p>
-      </div>
-      <span className="rounded-full border border-carbon-line bg-carbon-raised px-3 py-1 font-mono text-[10.5px] uppercase tracking-[0.14em] text-dusk-faint">
-        Web apps supported today
-      </span>
     </div>
   );
 }
