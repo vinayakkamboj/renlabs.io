@@ -20,6 +20,7 @@ import {
   isCodePath,
   isCodeFileComplete,
   stubDanglingImports,
+  normalizeProjectImports,
 } from "./file-patches";
 import { createBaseTemplate } from "./base-template";
 import { DEFAULT_MODEL_TIER, type ModelTierId } from "./model-tiers";
@@ -541,7 +542,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         // a Stop or refresh mid-continuation must never leave App.tsx importing
         // pages that don't exist yet ("Could not find module" preview crash).
         const safePartial = stubDanglingImports(
-          applyPatchPlan(get().projectFiles, plan),
+          normalizeProjectImports(applyPatchPlan(get().projectFiles, plan)).files,
         ).files;
         partialApplied = true;
         set({
@@ -611,7 +612,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       // preview always renders (a visible "still being built" page beats a
       // "Could not find module" crash).
       const { files: nextFiles, stubbed } = stubDanglingImports(
-        applyPatchPlan(get().projectFiles, plan),
+        normalizeProjectImports(applyPatchPlan(get().projectFiles, plan)).files,
       );
       // Track both full-file writes and surgical edits as "changed".
       const changedPaths = Array.from(

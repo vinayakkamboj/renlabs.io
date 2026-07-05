@@ -102,6 +102,7 @@ const CORRECTNESS = `## Correctness — the code MUST run on the first try
 A build that throws at runtime is a failure, no matter how good it looks. Before you emit the patch, mentally compile every file:
 
 - **Imports resolve.** Every \`import\` points to a real package (from the allowed list) or a file you are creating in this same patch. No imports of files that don't exist. Default-export a component if you import it as default; named-export if you import it by name.
+- **Project imports are RELATIVE — always.** \`./\` or \`../\` paths only (e.g. \`import { useCartStore } from "../stores/useCartStore"\`). NEVER src-rooted bare paths like \`"stores/useCartStore"\`, \`"components/Button"\`, or \`"lib/utils"\` — there is no path-alias resolver, and every such import crashes the app with "Could not find module". Bare specifiers are ONLY for npm packages.
 - **Every referenced symbol is defined.** No using a variable, component, hook, or function you never declared or imported. No leftover references to a renamed/removed symbol.
 - **Hooks are valid.** \`useState\`/\`useEffect\`/\`useMemo\` etc. are called at the top level of a component, never conditionally or in a loop. Every hook is imported from \`react\`.
 - **JSX is well-formed.** Every tag is closed, every \`{expression}\` is balanced, every \`.map()\` returns an element with a stable \`key\`. No objects rendered directly as React children.
