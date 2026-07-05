@@ -671,3 +671,64 @@ export function stubDanglingImports(files: ProjectFile[]): {
 
   return { files: out, stubbed };
 }
+
+// ─── Import-path normalization ───────────────────────────────────────────────
+
+/** Top-level src/ directories we recognize even before any file exists in
+ *  them — a bare import into one of these is always a project import, never
+ *  an npm package. */
+const KNOWN_SRC_DIRS = new Set([
+  "components", "pages", "stores", "lib", "data", "hooks", "utils",
+  "features", "context", "types", "constants", "layouts", "services", "game",
+]);
+
+/**
+ * Rewrite src-rooted "bare" project imports (e.g. `from "stores/useHabitStore"`)
+ * into proper relative paths (`from "../stores/useHabitStore"`).
+ *
+ * Models frequently assume a baseUrl/path-alias resolver; the preview bundler
+ * has none, so these imports crash the app with "Could not find module".
+ * Only specifiers whose first segment is a real (or well-known) top-level
+ * directory under src/ are rewritten — bare npm package imports (react,
+ * zustand, date-fns, …) are untouched. Runs deterministically on every apply,
+ * so it also heals previously-saved projects on their next build pass.
+ */
+export function normalizeProjectImports(files: ProjectFile[]): {
+  files: ProjectFile[];
+  fixed: string[];
+} {
+  const srcDirs = new Set(KNOWN_SRC_DIRS);
+  for (const f of files) {
+    const m = /^src\/([^/]+)\//.exec(f.path);
+    if (m) srcDirs.add(m[1]);
+  }
+
+  const fixed: string[] = [];
+  // Covers: import x from "spec" · import "spec" · export { x } from "spec"
+  // · dynamic import("spec")
+  const specRe = /(from\s*|import\s*\(?\s*)(["'])([^"'\n]+)\2/g;
+
+  const out = files.map((file) => {
+    if (!isCodePath(file.path) || !file.path.startsWith("src/")) return file;
+    let changed = false;
+    const content = file.content.replace(specRe, (whole, kw, quote, spec) => {
+      if (spec.startsWith(".") || spec.startsWith("/")) return whole;
+      const first = spec.split("/")[0];
+      if (!srcDirs.has(first)) return whole; // npm package — leave untouched
+      // Relative path from the importer's directory to src/<spec>.
+      const fromDir = file.path.split("/").slice(0, -1);
+      const target = `src/${spec}`.split("/");
+      let i = 0;
+      while (i < fromDir.length && i < target.length - 1 && fromDir[i] === target[i]) i++;
+      const ups = fromDir.length - i;
+      const rel = (ups ? "../".repeat(ups) : "./") + target.slice(i).join("/");
+      changed = true;
+      return `${kw}${quote}${rel}${quote}`;
+    });
+    if (!changed) return file;
+    fixed.push(file.path);
+    return { ...file, content };
+  });
+
+  return { files: out, fixed };
+}

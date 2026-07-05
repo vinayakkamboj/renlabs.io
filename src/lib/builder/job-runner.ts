@@ -30,6 +30,7 @@ import {
   detectFatalIssues,
   describeFatalIssues,
   stubDanglingImports,
+  normalizeProjectImports,
   isCodePath,
   isCodeFileComplete,
 } from "./file-patches";
@@ -309,6 +310,9 @@ export async function runBuildStep(jobId: string, origin: string): Promise<void>
   try {
     const pass = state.pass ?? 0;
     let files = await loadProjectFiles(supabase, job.project_id);
+    // Heal src-rooted bare imports in previously-saved files — projects
+    // persisted before the normalizer existed self-repair on their next pass.
+    files = normalizeProjectImports(files).files;
     const firstBuild = (job.is_first_build || files.length === 0) && !(state.appWritten ?? false);
     if (!files.length) files = createBaseTemplate();
 
@@ -451,7 +455,14 @@ export async function runBuildStep(jobId: string, origin: string): Promise<void>
       ? { ...plan, changes: plan.changes.filter((c) => !dropped.includes(c.path)) }
       : plan;
 
-    files = applyPatchPlan(files, cleanPlan);
+    const applied = normalizeProjectImports(applyPatchPlan(files, cleanPlan));
+    files = applied.files;
+    if (applied.fixed.length) {
+      await log(supabase, jobId, {
+        kind: "verifying",
+        text: `Normalized bare imports to relative paths in ${applied.fixed.length} file${applied.fixed.length === 1 ? "" : "s"}`,
+      });
+    }
 
     // Persist progress after EVERY pass (stubbed so the app always runs).
     const { files: safeFiles, stubbed } = stubDanglingImports(files);
