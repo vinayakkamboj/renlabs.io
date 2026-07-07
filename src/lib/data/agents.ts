@@ -131,6 +131,32 @@ export function isWithinWorkingHours(
     : hour >= start || hour < end; // overnight, e.g. 22 → 6
 }
 
+const DAY_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** Compact human label for the working window ("09:00–17:00 · Mon–Fri"),
+ *  or null when the agent runs around the clock. */
+export function formatWorkingWindow(
+  agent: Pick<Agent, "workingHoursStart" | "workingHoursEnd" | "workingDays">,
+): string | null {
+  const parts: string[] = [];
+  if (agent.workingHoursStart != null && agent.workingHoursEnd != null) {
+    parts.push(
+      `${String(agent.workingHoursStart).padStart(2, "0")}:00–${String(agent.workingHoursEnd).padStart(2, "0")}:00`,
+    );
+  }
+  if (agent.workingDays?.length && agent.workingDays.length < 7) {
+    const days = [...agent.workingDays].sort();
+    // Contiguous ranges read as "Mon–Fri"; otherwise list the days.
+    const contiguous = days.every((d, i) => i === 0 || d === days[i - 1] + 1);
+    parts.push(
+      contiguous && days.length > 2
+        ? `${DAY_SHORT[days[0]]}–${DAY_SHORT[days[days.length - 1]]}`
+        : days.map((d) => DAY_SHORT[d]).join(" "),
+    );
+  }
+  return parts.length ? parts.join(" · ") : null;
+}
+
 /**
  * The next moment the agent's working window opens, for scheduling next_run_at
  * when a cycle lands outside the window. Scans hour-by-hour (bounded to one

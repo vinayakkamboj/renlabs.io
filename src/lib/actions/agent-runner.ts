@@ -405,6 +405,11 @@ async function executeAgent(ctx: AgentContext): Promise<{
   // cleaning it up. Only FATAL issues can fail the run afterwards.
   const designIssues = detectDesignIssues(plan, false);
 
+  // The best VALID working state so far + the labels of what was done.
+  let working = modified;
+  let planLabel = plan.plan;
+  const summaries: string[] = [plan.plan];
+
   // One automatic repair pass
   if (issues.length > 0 || designIssues.length > 0) {
     const issueDesc = [
@@ -428,43 +433,207 @@ async function executeAgent(ctx: AgentContext): Promise<{
     // back to the best VALID candidate instead of throwing the work away:
     // an original with only design nits is still shippable.
     const fallbackOk = issues.length === 0;
-    if (!repairedPlan) {
-      if (!fallbackOk) throw new Error("Repair produced no valid patches");
-      return {
-        plan: plan.plan,
-        changedFiles: finalize(modified),
-        reportContent: `Applied changes:\n${plan.plan}`,
-        tokensUsed,
-      };
-    }
-
-    const repaired = applyPatchPlan(ctx.files, repairedPlan);
-    const repairedIssues = detectFatalIssues(repairedPlan, repaired, false);
-    if (repairedIssues.length > 0) {
-      if (!fallbackOk)
+    if (repairedPlan) {
+      const repaired = applyPatchPlan(ctx.files, repairedPlan);
+      const repairedIssues = detectFatalIssues(repairedPlan, repaired, false);
+      if (repairedIssues.length === 0) {
+        working = repaired;
+        planLabel = repairedPlan.plan;
+        summaries[0] = repairedPlan.plan;
+      } else if (!fallbackOk) {
         throw new Error(`Repair still has issues: ${describeFatalIssues(repairedIssues)}`);
-      return {
-        plan: plan.plan,
-        changedFiles: finalize(modified),
-        reportContent: `Applied changes:\n${plan.plan}`,
-        tokensUsed,
-      };
+      }
+    } else if (!fallbackOk) {
+      throw new Error("Repair produced no valid patches");
     }
-
-    return {
-      plan: repairedPlan.plan,
-      changedFiles: finalize(repaired),
-      reportContent: `Repaired and applied changes:\n${repairedPlan.plan}`,
-      tokensUsed,
-    };
   }
 
+  // ── DEPTH LOOP — finish the task, don't just touch it ────────────────────
+  // The agent reviews its own work against the task and keeps going (bounded)
+  // until the task is verifiably complete. This is what makes one cycle
+  // implement a task END-TO-END instead of shipping the first shallow patch
+  // and waiting for the user to prompt again.
+  const deepened = await deepenTask(ctx, working, summaries, tokensUsed, perRunCap);
+  working = deepened.files;
+  tokensUsed = deepened.tokensUsed;
+
   return {
-    plan: plan.plan,
-    changedFiles: finalize(modified),
-    reportContent: `Applied changes:\n${plan.plan}`,
+    plan: planLabel,
+    changedFiles: finalize(working),
+    reportContent:
+      summaries.length > 1
+        ? `Completed in ${summaries.length} passes:\n${summaries.map((s, i) => `${i + 1}. ${s}`).join("\n")}`
+        : `Applied changes:\n${planLabel}`,
     tokensUsed,
   };
+}
+
+/** Extra self-review passes per cycle. Each is a full model call, so this is
+ *  deliberately small — depth comes from finishing, not from spinning. */
+const MAX_DEPTH_PASSES = 2;
+const TASK_COMPLETE_MARKER = "TASK_COMPLETE";
+
+/**
+ * Self-review continuation loop: show the agent its own work-in-progress and
+ * ask "is the task FULLY done?" — it either declares TASK_COMPLETE or emits
+ * only the remaining patches. Three hard bounds keep it safe: pass count,
+ * the owner's per-run token cap, and validation (an invalid continuation is
+ * dropped and the loop stops at the last good state — it can never regress).
+ */
+async function deepenTask(
+  ctx: AgentContext,
+  files: ProjectFile[],
+  summaries: string[],
+  tokensUsed: number,
+  perRunCap: number,
+): Promise<{ files: ProjectFile[]; tokensUsed: number }> {
+  const taskText =
+    ctx.task?.detail || ctx.task?.title || ctx.agent.goal || "Improve the project.";
+
+  let working = files;
+  for (let pass = 0; pass < MAX_DEPTH_PASSES; pass++) {
+    // Respect the owner's token budget: leave headroom for one more full call.
+    if (tokensUsed > perRunCap * 0.7) break;
+
+    // Context: the full path manifest + content of files this cycle touched
+    // (bounded), so the reviewer sees its own work without re-sending the repo.
+    const touched = working
+      .filter((f) => !ctx.files.some((o) => o.path === f.path && o.content === f.content))
+      .slice(0, 12);
+    const manifest = working.map((f) => f.path).join("\n");
+    const touchedBlock = touched
+      .map((f) => `### ${f.path}\n\`\`\`\n${f.content.slice(0, 6_000)}\n\`\`\``)
+      .join("\n\n");
+
+    const review = await completeAstraText(
+      [
+        { role: "system", content: buildEditPrompt() },
+        {
+          role: "user",
+          content:
+            `## Task you are completing\n${taskText}\n\n` +
+            `## Work done so far this cycle\n${summaries.map((s, i) => `${i + 1}. ${s}`).join("\n")}\n\n` +
+            `## All project files\n${manifest}\n\n` +
+            `## Files you changed this cycle\n${touchedBlock}\n\n` +
+            `Review your work against the task like a strict senior engineer. Is the task FULLY implemented end-to-end — every screen wired, every referenced file real, states handled, nothing stubbed or half-done?\n` +
+            `- If YES: respond with exactly ${TASK_COMPLETE_MARKER} and nothing else.\n` +
+            `- If NO: emit ONLY the remaining/incomplete changes as a <file_patches> block. Do not re-emit files that are already correct.`,
+        },
+      ],
+      { maxTokens: Math.min(8_000, perRunCap), reasoningEffort: "high" },
+    );
+    if (!review.ok) break; // provider hiccup — ship the last good state
+    tokensUsed += (review.usage?.inputTokens ?? 0) + (review.usage?.outputTokens ?? 0);
+
+    if (review.text.includes(TASK_COMPLETE_MARKER)) break;
+
+    const contPlan = parseFilePatchPlan(review.text);
+    if (!contPlan) break; // no actionable continuation — stop at last good state
+
+    const next = applyPatchPlan(working, contPlan);
+    const contIssues = detectFatalIssues(contPlan, next, false);
+    if (contIssues.length > 0) break; // invalid continuation — never regress
+
+    working = next;
+    summaries.push(contPlan.plan || "Continued the task");
+  }
+
+  return { files: working, tokensUsed };
+}
+
+/**
+ * Autonomy bootstrap: an agent with an empty queue writes its OWN backlog
+ * from the project brief, goals, and codebase — then immediately starts on
+ * the first item. Combined with reflectAndQueueTasks (which queues follow-ups
+ * after every cycle), the loop feeds itself: the user sets the goal once and
+ * never has to prompt task-by-task.
+ */
+async function bootstrapBacklog(
+  ctx: AgentContext,
+): Promise<{ task: AgentTask | null; tokensUsed: number }> {
+  const preset = ROLE_PRESETS[ctx.agent.role];
+  const goal = ctx.agent.goal || preset?.defaultGoal || `Improve the ${ctx.project.name} project.`;
+  const manifest = ctx.files.map((f) => f.path).join("\n") || "(empty project)";
+
+  const result = await completeAstraText(
+    [
+      {
+        role: "user",
+        content:
+          `You are ${ctx.agent.name}, the ${preset?.label ?? ctx.agent.role} on the "${ctx.project.name}" project.` +
+          buildBusinessContext(ctx) +
+          (ctx.agent.focus ? `\nYour scope: ${ctx.agent.focus}` : "") +
+          `\n\nYour standing goal: ${goal}\n\nProject files:\n${manifest}\n\n` +
+          `Write your own work backlog: the 3-5 most valuable, CONCRETE tasks (each completable in one focused session) that advance the goal from the project's current state. Order by priority.\n` +
+          `Return ONLY a JSON array like: [{"title": "short imperative title", "detail": "2-3 sentences: exactly what to build/change and what done looks like"}]`,
+      },
+    ],
+    { maxTokens: 900, reasoningEffort: "low" },
+  );
+  if (!result.ok) return { task: null, tokensUsed: 0 };
+  const tokensUsed =
+    (result.usage?.inputTokens ?? 0) + (result.usage?.outputTokens ?? 0);
+
+  let items: { title: string; detail?: string }[] = [];
+  try {
+    const match = result.text.match(/\[[\s\S]*\]/);
+    if (match) {
+      items = (JSON.parse(match[0]) as unknown[])
+        .map((t) =>
+          typeof t === "string"
+            ? { title: t }
+            : (t as { title?: string; detail?: string }),
+        )
+        .filter((t): t is { title: string; detail?: string } =>
+          Boolean(t && typeof t.title === "string" && t.title.trim()),
+        )
+        .slice(0, 5);
+    }
+  } catch {
+    /* unparseable backlog — the run falls back to goal-driven mode */
+  }
+  if (!items.length) return { task: null, tokensUsed };
+
+  let firstTask: AgentTask | null = null;
+  for (let i = 0; i < items.length; i++) {
+    const { data } = await ctx.supabase
+      .from("agent_tasks")
+      .insert({
+        user_id: ctx.userId,
+        project_id: ctx.project.id,
+        agent_id: ctx.agent.id,
+        title: items[i].title.trim().slice(0, 200),
+        detail: items[i].detail?.trim().slice(0, 1_000) || null,
+        status: "queued",
+        priority: i === 0 ? "high" : "medium",
+      })
+      .select("*")
+      .single();
+    if (i === 0 && data) {
+      firstTask = {
+        id: data.id,
+        projectId: data.project_id,
+        agentId: data.agent_id,
+        title: data.title,
+        detail: data.detail ?? null,
+        status: data.status,
+        priority: data.priority,
+        createdAt: data.created_at,
+        updatedAt: data.updated_at,
+        completedAt: null,
+      };
+    }
+  }
+
+  if (firstTask) {
+    await logActivity({
+      projectId: ctx.project.id,
+      agentId: ctx.agent.id,
+      kind: "task_created",
+      message: `${ctx.agent.name} planned its own backlog (${items.length} tasks) and started: ${firstTask.title}`,
+    });
+  }
+  return { task: firstTask, tokensUsed };
 }
 
 async function reflectAndQueueTasks(
@@ -556,11 +725,6 @@ export async function runAgentTask(
       return { ok: false, error: "You don't have access to this agent." };
     }
 
-    // If no task and not code-generating, nothing to do
-    if (!ctx.task && !["developer", "qa", "design", "ops"].includes(ctx.agent.role)) {
-      return { ok: false, error: "No task queued for this agent" };
-    }
-
     const now = new Date();
 
     // ── Working hours ────────────────────────────────────────────────────────
@@ -595,6 +759,21 @@ export async function runAgentTask(
       };
     }
 
+    // ── Autonomy bootstrap ───────────────────────────────────────────────────
+    // Empty queue? The agent plans its OWN backlog from the goal + project
+    // state and starts on the first item — the user never has to feed it
+    // task-by-task. (Cheap planning call; if it yields nothing, code roles
+    // still run goal-driven, non-code roles genuinely have nothing to do.)
+    let bootstrapTokens = 0;
+    if (!ctx.task) {
+      const boot = await bootstrapBacklog(ctx);
+      bootstrapTokens = boot.tokensUsed;
+      if (boot.task) ctx.task = boot.task;
+      else if (!["developer", "qa", "design", "ops"].includes(ctx.agent.role)) {
+        return { ok: false, error: "No task queued for this agent" };
+      }
+    }
+
     // ── Credit budget ────────────────────────────────────────────────────────
     // Each run is charged to the owner's Ren credit balance. A positive per-agent
     // budget caps how much of that balance this one agent may spend.
@@ -626,7 +805,9 @@ export async function runAgentTask(
     const creditsBalance = "skipped" in charge ? undefined : charge.balance;
 
     // Execute
-    const { plan, changedFiles, reportContent, tokensUsed } = await executeAgent(ctx);
+    const exec = await executeAgent(ctx);
+    const { plan, changedFiles, reportContent } = exec;
+    const tokensUsed = exec.tokensUsed + bootstrapTokens;
 
     // Save files
     if (changedFiles.length > 0) {

@@ -89,15 +89,25 @@ export function Label({ children }: { children: React.ReactNode }) {
  * customize lives here: what the agent works on (goal, scope), the rules it
  * follows every run, its working hours, and its token consumption caps.
  */
-export function AgentSettingsButton({ agent }: { agent: Agent }) {
+export function AgentSettingsButton({
+  agent,
+  compact,
+}: {
+  agent: Agent;
+  /** Smaller footprint for dense rows (workspace agent cards). */
+  compact?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <>
       <button
         onClick={() => setOpen(true)}
-        className="flex h-8 items-center gap-1.5 rounded-lg border border-carbon-line px-3 text-[12px] font-medium text-dusk-muted transition-colors hover:border-carbon-line-strong hover:text-dusk"
+        className={cn(
+          "flex items-center gap-1.5 rounded-lg border border-carbon-line font-medium text-dusk-muted transition-colors hover:border-carbon-line-strong hover:text-dusk",
+          compact ? "h-7 px-2.5 text-[11px]" : "h-8 px-3 text-[12px]",
+        )}
       >
-        <Settings2 className="size-3.5" />
+        <Settings2 className={compact ? "size-3" : "size-3.5"} />
         Configure
       </button>
       {open && <SettingsModal agent={agent} onClose={() => setOpen(false)} />}

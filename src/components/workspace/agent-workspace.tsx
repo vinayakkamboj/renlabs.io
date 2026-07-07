@@ -42,8 +42,9 @@ import {
   type BranchDiffEntry,
 } from "@/lib/actions/workforce";
 import { setAgentLoop } from "@/lib/actions/agents";
-import { ROLE_PRESETS } from "@/lib/data/agents";
+import { ROLE_PRESETS, formatWorkingWindow } from "@/lib/data/agents";
 import { AgentStatusBadge } from "@/components/platform/agent-controls";
+import { AgentSettingsButton } from "@/components/platform/agent-settings-modal";
 import { useWorkspaceStore } from "@/lib/builder/store";
 import { cn } from "@/lib/utils";
 
@@ -413,6 +414,9 @@ function AgentCard({
   const Icon = ROLE_PRESETS[agent.role]?.icon ?? Bot;
   const role = ROLE_PRESETS[agent.role]?.label ?? agent.role;
   const looping = agent.loopEnabled;
+  const windowLabel = formatWorkingWindow(agent);
+  const today = new Date().toISOString().slice(0, 10);
+  const spentToday = agent.tokensTodayDate === today ? agent.tokensSpentToday : 0;
 
   return (
     <div
@@ -436,8 +440,19 @@ function AgentCard({
         </span>
         <div className="min-w-0 flex-1">
           <p className="truncate text-[13px] font-medium text-dusk">{agent.name}</p>
-          <p className="text-[11px] text-dusk-faint">{role}</p>
+          <p className="truncate text-[11px] text-dusk-faint">
+            {role}
+            {agent.focus && <span className="text-dusk-muted"> · {agent.focus}</span>}
+          </p>
         </div>
+        {windowLabel && (
+          <span
+            className="hidden shrink-0 rounded-full border border-carbon-line bg-carbon px-2 py-0.5 font-mono text-[9.5px] text-dusk-faint sm:inline"
+            title="Working hours — the ambient loop only runs inside this window"
+          >
+            {windowLabel}
+          </span>
+        )}
         {running ? (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-brass/15 px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.1em] text-brass">
             <span className="size-1.5 animate-pulse rounded-full bg-brass" />
@@ -455,6 +470,18 @@ function AgentCard({
         <Stat icon={<ListTodo className="size-3" />} label="queued" value={summary.tasksQueued} />
         {summary.filesTouched.length > 0 && (
           <Stat icon={<FileText className="size-3" />} label="files last run" value={summary.filesTouched.length} />
+        )}
+        {(agent.dailyTokenBudget || spentToday > 0) && (
+          <span
+            className="flex items-center gap-1.5 text-dusk-faint"
+            title="Tokens spent today vs. daily budget"
+          >
+            <Zap className="size-3 text-dusk-muted" />
+            <span className="font-medium text-dusk">{spentToday.toLocaleString()}</span>
+            {agent.dailyTokenBudget
+              ? `/ ${agent.dailyTokenBudget.toLocaleString()} tokens`
+              : "tokens today"}
+          </span>
         )}
       </div>
 
@@ -500,14 +527,17 @@ function AgentCard({
           </div>
         )}
 
-        <button
-          onClick={onRunOnce}
-          disabled={running}
-          className="ml-auto flex h-7 items-center gap-1.5 rounded-lg border border-carbon-line px-2.5 text-[11px] font-medium text-dusk-muted transition-colors hover:text-dusk disabled:opacity-50"
-        >
-          <Zap className="size-3" />
-          Run once
-        </button>
+        <div className="ml-auto flex items-center gap-2">
+          <AgentSettingsButton agent={agent} compact />
+          <button
+            onClick={onRunOnce}
+            disabled={running}
+            className="flex h-7 items-center gap-1.5 rounded-lg border border-carbon-line px-2.5 text-[11px] font-medium text-dusk-muted transition-colors hover:text-dusk disabled:opacity-50"
+          >
+            <Zap className="size-3" />
+            Run once
+          </button>
+        </div>
       </div>
 
       {agent.consecutiveFailures > 0 && (
