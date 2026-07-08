@@ -28,6 +28,7 @@ import {
   type RepoPreviewProfile,
 } from "@/lib/builder/repo-preview-intel";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
+import { isEmailAllowed } from "@/lib/auth/allowlist";
 import type { ProjectFile } from "@/lib/builder/types";
 
 const MAX_FILES = 400;
@@ -123,12 +124,14 @@ export async function POST(req: NextRequest) {
 
   // Auth mirrors /api/builder: when Supabase is configured, a session is
   // required (the analysis spends our inference); local dev runs open.
+  // Non-allowlisted accounts get the heuristic profile — no model spend.
   if (isSupabaseConfigured()) {
     const supabase = await createClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ profile: heuristic }, { status: 401 });
+    if (!isEmailAllowed(user.email)) return respond(heuristic);
   }
 
   if (!files.length || !isAstraConfigured()) return respond(heuristic);

@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { isEmailAllowed } from "@/lib/auth/allowlist";
 
 /**
  * Session refresh + access control.
@@ -40,10 +41,13 @@ export async function middleware(request: NextRequest) {
 
   // Only do the session work for paths that actually gate on auth.
   const path = nextUrl.pathname;
+  const isProductPath =
+    path.startsWith("/dashboard") || path.startsWith("/workspace");
   const needsAuth =
-    path.startsWith("/dashboard") ||
+    isProductPath ||
     path.startsWith("/admin") ||
-    path === "/login";
+    path === "/login" ||
+    path === "/restricted";
   if (!needsAuth) return NextResponse.next();
 
   let supabaseResponse = NextResponse.next({ request });
@@ -72,12 +76,37 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   // /admin handles its own (dedicated) sign-in screen, so don't bounce it to the
-  // user login. Only the Ren Code dashboard redirects unauthenticated users.
-  if (!user && path.startsWith("/dashboard")) {
+  // user login. Only the Ren Code product surfaces redirect unauthenticated users.
+  if (!user && isProductPath) {
     const redirect = nextUrl.clone();
     redirect.pathname = "/login";
     redirect.search = "";
     redirect.searchParams.set("next", path);
+    return NextResponse.redirect(redirect);
+  }
+
+  // Private beta: signed-in users outside the allowlist can't enter the
+  // product — they land on /restricted. (The compute APIs enforce the same
+  // allowlist server-side; this redirect is the friendly half.)
+  if (user && isProductPath && !isEmailAllowed(user.email)) {
+    const redirect = nextUrl.clone();
+    redirect.pathname = "/restricted";
+    redirect.search = "";
+    return NextResponse.redirect(redirect);
+  }
+
+  // Allowed users have no business on /restricted — send them in.
+  if (path === "/restricted" && user && isEmailAllowed(user.email)) {
+    const redirect = nextUrl.clone();
+    redirect.pathname = "/dashboard";
+    redirect.search = "";
+    return NextResponse.redirect(redirect);
+  }
+
+  if (user && path === "/login" && !isEmailAllowed(user.email) && !host.startsWith("admin.")) {
+    const redirect = nextUrl.clone();
+    redirect.pathname = "/restricted";
+    redirect.search = "";
     return NextResponse.redirect(redirect);
   }
 

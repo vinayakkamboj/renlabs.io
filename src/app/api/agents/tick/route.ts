@@ -23,6 +23,7 @@ export const maxDuration = 300;
 import { after } from "next/server";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import { claimDueAgents, runClaimedAgents } from "@/lib/actions/agent-scheduler";
+import { isEmailAllowed } from "@/lib/auth/allowlist";
 
 // One user's tick advances at most this many agents per minute — plenty for a
 // starter team, and it bounds how much work one invocation takes on.
@@ -38,6 +39,9 @@ export async function POST() {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return Response.json({ error: "auth_required" }, { status: 401 });
+  if (!isEmailAllowed(user.email)) {
+    return Response.json({ error: "private_beta" }, { status: 403 });
+  }
 
   const claimed = await claimDueAgents({ userId: user.id, limit: MAX_AGENTS_PER_TICK });
   if (!claimed.length) return Response.json({ ticked: 0 });

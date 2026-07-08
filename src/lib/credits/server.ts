@@ -96,12 +96,26 @@ export async function ensureCreditsAccount(userId: string): Promise<void> {
  * Falls back to "skipped" when the table / function doesn't exist so local
  * development works without a migration.
  */
+/**
+ * Billing kill-switch for the private beta. While payments aren't set up,
+ * generation is FREE for (allowlisted) users: every deduction short-circuits
+ * to "skipped" — nothing is charged and nobody is blocked on balance.
+ *
+ * The moment payments go live, set REN_BILLING_ENFORCED=1 and the full
+ * metered credit system below takes over unchanged.
+ */
+function billingEnforced(): boolean {
+  const v = process.env.REN_BILLING_ENFORCED;
+  return v === "1" || v === "true";
+}
+
 export async function deductBuildCredits(
   userId: string,
   tier: ModelTierId,
   projectId: string,
 ): Promise<DeductResult> {
   if (!isSupabaseConfigured()) return { ok: true, skipped: true };
+  if (!billingEnforced()) return { ok: true, skipped: true };
 
   const cost = CREDITS_PER_BUILD[tier];
   const supabase = await createClient();
@@ -148,6 +162,7 @@ export async function deductAgentRunCredits(
   cost: number,
 ): Promise<DeductResult> {
   if (!isSupabaseConfigured()) return { ok: true, skipped: true };
+  if (!billingEnforced()) return { ok: true, skipped: true };
 
   const supabase = createAdminClient();
   try {
@@ -184,6 +199,7 @@ export async function checkBuildCredits(
   tier: ModelTierId,
 ): Promise<CreditCheckResult> {
   if (!isSupabaseConfigured()) return { ok: true, skipped: true };
+  if (!billingEnforced()) return { ok: true, skipped: true };
 
   const cost = CREDITS_PER_BUILD[tier];
 

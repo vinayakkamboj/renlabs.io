@@ -44,6 +44,7 @@ import {
   extractUsage,
 } from "@/lib/ai/usage";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
+import { isEmailAllowed } from "@/lib/auth/allowlist";
 import { deductBuildCredits } from "@/lib/credits/server";
 import { CREDITS_PER_BUILD } from "@/lib/credits/config";
 import type { ProjectFile } from "@/lib/builder/types";
@@ -115,10 +116,12 @@ export async function POST(req: NextRequest) {
   // Authenticate the request server-side. Never trust client-reported user id.
   if (isSupabaseConfigured()) {
     let userId: string | null = null;
+    let userEmail: string | null = null;
     try {
       const supabase = await createClient();
       const { data: { user } } = await supabase.auth.getUser();
       userId = user?.id ?? null;
+      userEmail = user?.email ?? null;
     } catch {
       // Auth client error → deny to be safe in production
       return Response.json({ error: "auth_required" }, { status: 401 });
@@ -126,6 +129,12 @@ export async function POST(req: NextRequest) {
 
     if (!userId) {
       return Response.json({ error: "auth_required" }, { status: 401 });
+    }
+
+    // Private beta: builds are allowlist-only, enforced here regardless of
+    // what the UI shows.
+    if (!isEmailAllowed(userEmail)) {
+      return Response.json({ error: "private_beta" }, { status: 403 });
     }
 
     // Everyone — including admins — goes through the metered gate. Admins top
