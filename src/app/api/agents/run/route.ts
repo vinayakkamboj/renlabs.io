@@ -15,7 +15,7 @@ export const maxDuration = 300;
 import { NextRequest } from "next/server";
 import { runAgentTask } from "@/lib/actions/agent-runner";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
-import { isEmailAllowed } from "@/lib/auth/allowlist";
+import { isUserAllowed } from "@/lib/auth/access";
 
 export async function POST(req: NextRequest) {
   let body: { agentId?: string; taskId?: string };
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
     if (!user) {
       return Response.json({ ok: false, error: "Sign in to run agents." }, { status: 401 });
     }
-    if (!isEmailAllowed(user.email)) {
+    if (!(await isUserAllowed(supabase, user.id, user.email))) {
       return Response.json(
         { ok: false, error: "Ren is in private beta — your account isn't on the allowlist yet." },
         { status: 403 },

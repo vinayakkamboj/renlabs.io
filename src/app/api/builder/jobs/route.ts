@@ -17,7 +17,7 @@ import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
 import { deductBuildCredits } from "@/lib/credits/server";
 import { CREDITS_PER_BUILD } from "@/lib/credits/config";
 import { runBuildStep } from "@/lib/builder/job-runner";
-import { isEmailAllowed } from "@/lib/auth/allowlist";
+import { isUserAllowed } from "@/lib/auth/access";
 
 interface CreateJobRequest {
   projectId?: string;
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return Response.json({ error: "auth_required" }, { status: 401 });
-  if (!isEmailAllowed(user.email)) {
+  if (!(await isUserAllowed(supabase, user.id, user.email))) {
     return Response.json({ error: "private_beta" }, { status: 403 });
   }
 

@@ -16,7 +16,7 @@ import {
   describeDesignIssues,
 } from "@/lib/builder/design-lint";
 import { isWithinWorkingHours, nextWorkingWindowStart } from "@/lib/data/agents";
-import { isEmailAllowed } from "@/lib/auth/allowlist";
+import { isUserAllowed } from "@/lib/auth/access";
 import { buildEditPrompt, buildRepairPrompt } from "@/lib/builder/prompts";
 import { logActivity, setTaskStatus } from "./agents";
 import { deductAgentRunCredits } from "@/lib/credits/server";
@@ -726,13 +726,18 @@ export async function runAgentTask(
       return { ok: false, error: "You don't have access to this agent." };
     }
 
-    // Private beta: agents only run for allowlisted owners. This also covers
-    // the cron path (no session) — the owner's email is looked up via the
-    // admin API. A non-allowlisted owner's loop is switched off so the
-    // scheduler stops picking it up.
+    // Private beta: agents only run for allowed owners (static allowlist OR
+    // an admin-approved trial). This also covers the cron path (no session) —
+    // the owner's email is looked up via the admin API. A disallowed owner's
+    // loop is switched off so the scheduler stops picking it up.
     try {
       const { data: ownerInfo } = await ctx.supabase.auth.admin.getUserById(ctx.userId);
-      if (!isEmailAllowed(ownerInfo?.user?.email)) {
+      const allowed = await isUserAllowed(
+        ctx.supabase,
+        ctx.userId,
+        ownerInfo?.user?.email,
+      );
+      if (!allowed) {
         await ctx.supabase
           .from("agents")
           .update({ loop_enabled: false, status: "paused" })

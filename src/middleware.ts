@@ -1,6 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { isEmailAllowed } from "@/lib/auth/allowlist";
+import { isUserAllowed } from "@/lib/auth/access";
 
 /**
  * Session refresh + access control.
@@ -85,10 +85,17 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(redirect);
   }
 
-  // Private beta: signed-in users outside the allowlist can't enter the
-  // product — they land on /restricted. (The compute APIs enforce the same
-  // allowlist server-side; this redirect is the friendly half.)
-  if (user && isProductPath && !isEmailAllowed(user.email)) {
+  // Private beta: allowed = static allowlist OR an admin-approved trial
+  // request. Signed-in users without access land on /restricted, where they
+  // can request a trial. (The compute APIs enforce the same rule server-side;
+  // this redirect is the friendly half.)
+  const gateRelevant =
+    !!user && (isProductPath || path === "/restricted" || path === "/login");
+  const allowed = gateRelevant
+    ? await isUserAllowed(supabase, user!.id, user!.email)
+    : false;
+
+  if (user && isProductPath && !allowed) {
     const redirect = nextUrl.clone();
     redirect.pathname = "/restricted";
     redirect.search = "";
@@ -96,14 +103,14 @@ export async function middleware(request: NextRequest) {
   }
 
   // Allowed users have no business on /restricted — send them in.
-  if (path === "/restricted" && user && isEmailAllowed(user.email)) {
+  if (path === "/restricted" && user && allowed) {
     const redirect = nextUrl.clone();
     redirect.pathname = "/dashboard";
     redirect.search = "";
     return NextResponse.redirect(redirect);
   }
 
-  if (user && path === "/login" && !isEmailAllowed(user.email) && !host.startsWith("admin.")) {
+  if (user && path === "/login" && !allowed && !host.startsWith("admin.")) {
     const redirect = nextUrl.clone();
     redirect.pathname = "/restricted";
     redirect.search = "";

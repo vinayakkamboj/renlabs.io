@@ -28,7 +28,7 @@ import {
   type RepoPreviewProfile,
 } from "@/lib/builder/repo-preview-intel";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
-import { isEmailAllowed } from "@/lib/auth/allowlist";
+import { isUserAllowed } from "@/lib/auth/access";
 import type { ProjectFile } from "@/lib/builder/types";
 
 const MAX_FILES = 400;
@@ -131,7 +131,7 @@ export async function POST(req: NextRequest) {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) return NextResponse.json({ profile: heuristic }, { status: 401 });
-    if (!isEmailAllowed(user.email)) return respond(heuristic);
+    if (!(await isUserAllowed(supabase, user.id, user.email))) return respond(heuristic);
   }
 
   if (!files.length || !isAstraConfigured()) return respond(heuristic);

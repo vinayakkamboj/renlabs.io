@@ -15,6 +15,7 @@ import { canAccessFullPanel, ROLE_LABELS } from "@/lib/auth/roles";
  */
 const NAV = [
   { href: "/admin",          label: "Overview", exact: true,  fullOnly: false },
+  { href: "/admin/access",   label: "Access",   exact: false, fullOnly: false },
   { href: "/admin/users",    label: "Users",    exact: false, fullOnly: false },
   { href: "/admin/projects", label: "Projects", exact: false, fullOnly: true  },
   { href: "/admin/payments", label: "Payments", exact: false, fullOnly: true  },

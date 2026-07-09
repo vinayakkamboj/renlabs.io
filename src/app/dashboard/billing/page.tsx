@@ -10,6 +10,8 @@ import {
   formatCredits,
   packPriceUSD,
 } from "@/lib/credits/config";
+import { isStripeConfigured } from "@/lib/stripe";
+import { BuyPackButton } from "@/components/platform/buy-pack-button";
 
 export const metadata: Metadata = { title: "Billing" };
 export const dynamic = "force-dynamic";
@@ -23,7 +25,13 @@ const TIER_INFO = [
   },
 ];
 
-export default async function BillingPage() {
+export default async function BillingPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ purchase?: string }>;
+}) {
+  const params = (await searchParams) ?? {};
+  const paymentsEnabled = isStripeConfigured();
   let balance: number | null = null;
   let recentTransactions: Array<{
     id: string;
@@ -58,6 +66,16 @@ export default async function BillingPage() {
 
   return (
     <div className="space-y-8">
+      {params.purchase === "success" && (
+        <div className="rounded-xl border border-signal-green/30 bg-signal-green/[0.08] px-4 py-3 text-[13px] text-signal-green">
+          Payment received — your credits are being added and will appear here within a minute.
+        </div>
+      )}
+      {params.purchase === "cancelled" && (
+        <div className="rounded-xl border border-carbon-line bg-carbon-raised px-4 py-3 text-[13px] text-dusk-muted">
+          Checkout cancelled — nothing was charged.
+        </div>
+      )}
       {/* Balance hero */}
       <div className="flex flex-wrap items-center justify-between gap-6 rounded-2xl border border-carbon-line bg-carbon-raised p-6">
         <div>
@@ -122,22 +140,20 @@ export default async function BillingPage() {
                   </p>
                 )}
               </div>
-              <button
-                disabled
-                className="mt-5 flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-brass/20 text-[12.5px] font-medium text-brass/60 cursor-not-allowed"
-                title="Payment integration coming soon"
-              >
-                Coming soon
-              </button>
+              <BuyPackButton packId={pack.id} enabled={paymentsEnabled} />
             </div>
           ))}
         </div>
         <p className="mt-4 text-[12px] text-dusk-faint">
-          Payment processing will be available soon. To purchase credits now,{" "}
-          <a href="mailto:credits@ren.ai" className="text-brass transition-colors hover:text-brass-deep">
-            contact us
-          </a>
-          .
+          {paymentsEnabled
+            ? "Payments are processed securely by Stripe. Credits land in your balance the moment the payment completes."
+            : "Payment processing is almost live. To purchase credits now, "}
+          {!paymentsEnabled && (
+            <a href="mailto:credits@ren.ai" className="text-brass transition-colors hover:text-brass-deep">
+              contact us
+            </a>
+          )}
+          {!paymentsEnabled && "."}
         </p>
       </section>
 

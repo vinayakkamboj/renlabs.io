@@ -129,25 +129,9 @@ export function AstraChat() {
   const empty = messages.length === 0 && !streaming;
 
   return (
+    // No header bar of its own — the dashboard shell already provides the top
+    // navigation, and a second bar here read as a broken double navbar.
     <div className="flex h-[calc(100vh-9rem)] flex-col">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-carbon-line pb-3">
-        <div className="flex items-center gap-2">
-          <RenMark className="size-4 text-brass" />
-          <span className="font-serif text-[1.05rem] font-medium tracking-tight text-dusk">
-            Astra
-          </span>
-          <span className="rounded-full border border-carbon-line px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.16em] text-dusk-faint">
-            Chat
-          </span>
-        </div>
-        {remaining !== null && (
-          <span className="text-[11.5px] text-dusk-faint">
-            {remaining} message{remaining !== 1 ? "s" : ""} left today
-          </span>
-        )}
-      </div>
-
       {/* Messages */}
       <div ref={scrollRef} className="platform-scroll flex-1 overflow-y-auto py-6">
         {empty ? (
@@ -256,6 +240,11 @@ export function AstraChat() {
               <ImagePlus className="size-4" />
             </button>
             <span className="text-[10.5px] text-dusk-faint/60">⏎ send · ⇧⏎ newline</span>
+            {remaining !== null && (
+              <span className="text-[10.5px] text-dusk-faint/60">
+                · {remaining} left today
+              </span>
+            )}
             <div className="ml-auto">
               <button
                 onClick={() => send(input)}
