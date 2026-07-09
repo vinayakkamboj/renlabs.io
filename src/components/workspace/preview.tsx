@@ -118,6 +118,64 @@ function DepsPanel({ deps }: { deps: Record<string, string> }) {
   );
 }
 
+/**
+ * Watches the bundler for compile/runtime errors and offers a one-click fix:
+ * the full error (message + file) is handed to Astra as a build request. This
+ * closes the loop — a crash in the preview never requires the user to copy
+ * error text around; the system feeds itself the diagnostics.
+ */
+function PreviewErrorBanner() {
+  const { listen } = useSandpack();
+  const sendMessage = useWorkspaceStore((s) => s.sendMessage);
+  const isBuilding = useWorkspaceStore((s) => s.isBuilding);
+  const [error, setError] = useState<{ title: string; message: string; path?: string } | null>(
+    null,
+  );
+
+  useEffect(() => {
+    return listen((msg) => {
+      if (msg.type === "start") setError(null); // new compile — stale error gone
+      if (msg.type === "action" && "action" in msg && msg.action === "show-error") {
+        const e = msg as { title?: string; message?: string; path?: string };
+        setError({
+          title: e.title ?? "Build error",
+          message: (e.message ?? "").slice(0, 1200),
+          path: e.path,
+        });
+      }
+    });
+  }, [listen]);
+
+  if (!error) return null;
+
+  function fix() {
+    if (isBuilding || !error) return;
+    void sendMessage(
+      `The live preview crashed. Find the ROOT CAUSE and fix it completely — check the named file first, then every related import/declaration.\n\n` +
+        `Error: ${error.title}\n${error.message}` +
+        (error.path ? `\nFile: ${error.path}` : ""),
+    );
+    setError(null);
+  }
+
+  return (
+    <div className="flex shrink-0 items-center gap-3 border-t border-signal-red/30 bg-signal-red/10 px-3 py-2">
+      <p className="min-w-0 flex-1 truncate text-[11.5px] text-signal-red" title={error.message}>
+        <span className="font-medium">{error.title}</span>
+        {error.path && <span className="opacity-80"> · {error.path}</span>}
+      </p>
+      <button
+        onClick={fix}
+        disabled={isBuilding}
+        className="flex h-7 shrink-0 items-center gap-1.5 rounded-lg bg-signal-red px-3 text-[11.5px] font-medium text-white transition-colors hover:bg-signal-red/85 disabled:opacity-50"
+      >
+        {isBuilding ? <Loader2 className="size-3 animate-spin" /> : <Sparkles className="size-3" />}
+        {isBuilding ? "Astra is fixing…" : "Fix with Astra"}
+      </button>
+    </div>
+  );
+}
+
 function PreviewContent({ packageDeps }: { packageDeps: Record<string, string> }) {
   const [panelOpen, setPanelOpen] = useState(false);
   const [bottomTab, setBottomTab] = useState<"console" | "deps">("console");
@@ -142,6 +200,8 @@ function PreviewContent({ packageDeps }: { packageDeps: Record<string, string> }
           style={{ height: "100%", width: "100%" }}
         />
       </div>
+
+      <PreviewErrorBanner />
 
       {/* Bottom panel */}
       {panelOpen && (

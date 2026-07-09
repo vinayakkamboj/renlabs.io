@@ -422,6 +422,19 @@ export function detectFatalIssues(
     }
   }
 
+  // Duplicate top-level declarations — "Identifier 'X' has already been
+  // declared" is a hard SyntaxError that takes down the entire preview, so a
+  // file that declares the same name twice must never be applied.
+  for (const change of plan.changes) {
+    if (!isCodePath(change.path)) continue;
+    for (const name of findDuplicateTopLevelDecls(change.content)) {
+      issues.push({
+        type: "duplicate-identifier",
+        detail: `${change.path} declares "${name}" more than once at the top level — rename or remove one declaration (a duplicate identifier is a SyntaxError that crashes the whole app).`,
+      });
+    }
+  }
+
   // Edit validation. Each edit's `find` must resolve against the file's current
   // content (a same-turn full change wins over the existing file) and must match
   // EXACTLY ONCE. A miss or an ambiguous match would corrupt the file, so we
@@ -474,6 +487,37 @@ export function detectFatalIssues(
   }
 
   return issues;
+}
+
+/**
+ * Find identifiers declared more than once at module top level. Column-0
+ * anchored so nested (indented) declarations don't count, and limited to
+ * declaration kinds that actually collide — `interface`/`type` merge legally
+ * in TS and are deliberately excluded. Catches the classic preview-killer:
+ * `export const X = …` plus `export default function X() {}` in one file.
+ */
+export function findDuplicateTopLevelDecls(content: string): string[] {
+  const kinds = new Map<string, string[]>();
+  const re =
+    /^export\s+(?:default\s+)?(?:async\s+)?(function\*?|class|const|let|var|enum)\s+([A-Za-z_$][\w$]*)|^(?:async\s+)?(function\*?|class)\s+([A-Za-z_$][\w$]*)/gm;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(content)) !== null) {
+    const kind = (m[1] ?? m[3]).replace("*", "");
+    const name = m[2] ?? m[4];
+    if (!name) continue;
+    const list = kinds.get(name) ?? [];
+    list.push(kind);
+    kinds.set(name, list);
+  }
+  const dupes: string[] = [];
+  for (const [name, list] of kinds) {
+    if (list.length < 2) continue;
+    // function+function repeats can be legal TS overloads — everything else
+    // (const+function, const+const, class+class, …) is always a SyntaxError.
+    const allFunctions = list.every((k) => k === "function");
+    if (!allFunctions) dupes.push(name);
+  }
+  return dupes;
 }
 
 function extractRelativeImports(content: string): string[] {
@@ -621,52 +665,69 @@ export function stubDanglingImports(files: ProjectFile[]): {
   const importRe =
     /import\s+(?:([A-Za-z_$][\w$]*)\s*,?\s*)?(?:\{([^}]*)\})?\s*(?:from\s*)?["'](\.\.?\/[^"']+)["']/g;
 
+  // Pass 1 — aggregate demand per missing module across ALL importers, so a
+  // module imported as default by one file and by name from another gets ONE
+  // stub that satisfies every consumer.
+  const demands = new Map<string, Set<string>>();
   for (const file of files) {
     if (!isCodePath(file.path)) continue;
     let m: RegExpExecArray | null;
     while ((m = importRe.exec(file.content)) !== null) {
-      const [, defaultName, namedGroup, spec] = m;
+      const [, , namedGroup, spec] = m;
       const target = resolveRelative(file.path, spec);
       if (exists(target)) continue;
 
       if (/\.css$/.test(target)) {
-        out.push({ path: target, content: "/* pending — being built */\n" });
-        have.add(target);
-        stubbed.push(target);
+        if (!have.has(target)) {
+          out.push({ path: target, content: "/* pending — being built */\n" });
+          have.add(target);
+          stubbed.push(target);
+        }
         continue;
       }
 
       const path = /\.(tsx|ts|jsx|js)$/.test(target) ? target : `${target}.tsx`;
       if (have.has(path)) continue;
 
-      const named = (namedGroup ?? "")
-        .split(",")
-        .map((s) => s.trim().split(/\s+as\s+/)[0].trim())
-        .filter((s) => /^[A-Za-z_$][\w$]*$/.test(s));
-
-      const lines: string[] = [
-        `// Auto-stub: this module was referenced but not yet generated.`,
-        `// Ask Ren to "continue the build" to replace it with the real thing.`,
-      ];
-      for (const n of named) {
-        lines.push(`export const ${n}: any = () => null;`);
+      const named = demands.get(path) ?? new Set<string>();
+      for (const raw of (namedGroup ?? "").split(",")) {
+        const name = raw.trim().split(/\s+as\s+/)[0].trim();
+        if (/^[A-Za-z_$][\w$]*$/.test(name)) named.add(name);
       }
-      const comp = defaultName ?? componentNameFromPath(path);
-      lines.push(
-        `export default function ${componentNameFromPath(path)}() {`,
-        `  return (`,
-        `    <div style={{ minHeight: "40vh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 8, fontFamily: "system-ui", color: "#666" }}>`,
-        `      <strong style={{ fontSize: 18, color: "#333" }}>${comp} is still being built</strong>`,
-        `      <span style={{ fontSize: 14 }}>The build was interrupted — ask Ren to continue and finish this page.</span>`,
-        `    </div>`,
-        `  );`,
-        `}`,
-      );
-
-      out.push({ path, content: lines.join("\n") + "\n" });
-      have.add(path);
-      stubbed.push(path);
+      demands.set(path, named);
     }
+  }
+
+  // Pass 2 — emit one stub per missing module. The default function's
+  // identifier must NOT collide with any named export ("Identifier 'X' has
+  // already been declared" crashes the whole preview), so it is renamed until
+  // unique — the default binding works regardless of the function's name.
+  for (const [path, named] of demands) {
+    const display = componentNameFromPath(path);
+    let fnName = display;
+    while (named.has(fnName)) fnName += "Stub";
+
+    const lines: string[] = [
+      `// Auto-stub: this module was referenced but not yet generated.`,
+      `// Ask Ren to "continue the build" to replace it with the real thing.`,
+    ];
+    for (const n of named) {
+      lines.push(`export const ${n}: any = () => null;`);
+    }
+    lines.push(
+      `export default function ${fnName}() {`,
+      `  return (`,
+      `    <div style={{ minHeight: "40vh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 8, fontFamily: "system-ui", color: "#666" }}>`,
+      `      <strong style={{ fontSize: 18, color: "#333" }}>${display} is still being built</strong>`,
+      `      <span style={{ fontSize: 14 }}>The build was interrupted — ask Ren to continue and finish this page.</span>`,
+      `    </div>`,
+      `  );`,
+      `}`,
+    );
+
+    out.push({ path, content: lines.join("\n") + "\n" });
+    have.add(path);
+    stubbed.push(path);
   }
 
   return { files: out, stubbed };

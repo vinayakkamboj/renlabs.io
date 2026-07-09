@@ -71,7 +71,8 @@ export interface FatalIssue {
     | "missing-file"
     | "no-changes"
     | "invalid-path"
-    | "edit-failed";
+    | "edit-failed"
+    | "duplicate-identifier";
   detail: string;
 }
 

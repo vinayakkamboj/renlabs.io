@@ -104,6 +104,25 @@ function scoreFiles(
     .sort((a, b) => b.score - a.score);
 }
 
+/**
+ * Compact export signature for the repo map ("default HomePage, useCart,
+ * CartItem"). On big projects most files can't ship full content within the
+ * budget — the signature line still tells the model exactly what each module
+ * exports, so it imports instead of re-creating, and never re-declares an
+ * identifier that already exists.
+ */
+function exportSignature(content: string): string | null {
+  const names: string[] = [];
+  const re =
+    /^export\s+(default\s+)?(?:declare\s+)?(?:async\s+)?(?:function\*?|class|const|let|var|interface|type|enum)\s+([A-Za-z_$][\w$]*)/gm;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(content)) !== null && names.length < 8) {
+    names.push(m[1] ? `default ${m[2]}` : m[2]);
+  }
+  if (!names.length && /^export\s+default\b/m.test(content)) names.push("default");
+  return names.length ? names.join(", ") : null;
+}
+
 function truncate(content: string, role: FileRole): string {
   const limit = TRUNCATE_LINES[role] ?? DEFAULT_TRUNCATE;
   const lines = content.split("\n");
@@ -142,15 +161,23 @@ export function buildContextPack(
     budget -= block.length;
   }
 
-  const tree = files
-    .map((f) => f.path)
-    .sort()
-    .map((p) => `- ${p}`)
+  // Repo map: every path + what it exports. This is what keeps LARGE projects
+  // coherent — files whose content didn't fit the budget are still fully
+  // "known" (they exist, and these are their exports), so the model links to
+  // them instead of re-creating them or re-declaring their identifiers.
+  const tree = [...files]
+    .sort((a, b) => a.path.localeCompare(b.path))
+    .map((f) => {
+      const sig = /\.(tsx?|jsx?)$/.test(f.path) ? exportSignature(f.content) : null;
+      return sig ? `- ${f.path} — exports: ${sig}` : `- ${f.path}`;
+    })
     .join("\n");
 
   return [
-    "## Current project file tree",
+    "## Current project file tree (repo map)",
     tree,
+    "",
+    "EVERY file above already exists. Import from it with a relative path — never re-create an existing file unless you are intentionally replacing it, never invent a file that isn't listed without also creating it in this patch, and never declare an identifier that an existing file already exports into the same file twice.",
     "",
     "## Current project files (most relevant first)",
     sections.join("\n\n"),
