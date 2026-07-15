@@ -20,6 +20,7 @@ export interface AdminUser {
 const SUPERADMIN_EMAILS = [
   "vinayakkamboj01@gmail.com",
   "vinayak@renlabs.io",
+  "renlabs.io@gmail.com",
 ];
 
 function isHardcodedSuperAdmin(email: string): boolean {

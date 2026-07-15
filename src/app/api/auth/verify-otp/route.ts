@@ -12,7 +12,7 @@ export const runtime = "nodejs";
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
-const ADMIN_EMAILS = ["vinayakkamboj01@gmail.com", "vinayak@renlabs.io"];
+const ADMIN_EMAILS = ["vinayakkamboj01@gmail.com", "vinayak@renlabs.io", "renlabs.io@gmail.com"];
 
 export async function POST(req: Request) {
   let email: string;

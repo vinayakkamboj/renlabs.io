@@ -14,7 +14,7 @@
  * Pure string logic only — this runs in the edge middleware.
  */
 
-const BASE_ALLOWED_EMAILS = ["vinayakkamboj01@gmail.com"];
+const BASE_ALLOWED_EMAILS = ["vinayakkamboj01@gmail.com", "renlabs.io@gmail.com"];
 const BASE_ALLOWED_DOMAINS = ["renlabs.io"];
 
 function envList(name: string): string[] {

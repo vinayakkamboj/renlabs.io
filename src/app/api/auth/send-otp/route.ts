@@ -12,7 +12,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { sendMail, isSmtpConfigured } from "@/lib/email/mailer";
 import { otpEmail } from "@/lib/email/templates";
 
-const ADMIN_EMAILS = ["vinayakkamboj01@gmail.com", "vinayak@renlabs.io"];
+const ADMIN_EMAILS = ["vinayakkamboj01@gmail.com", "vinayak@renlabs.io", "renlabs.io@gmail.com"];
 
 function generate6DigitCode(): string {
   return String(Math.floor(100000 + Math.random() * 900000));
