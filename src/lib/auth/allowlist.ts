@@ -1,11 +1,11 @@
 /**
- * Private-beta access allowlist.
+ * Private-beta access allowlist (only consulted when REN_PRIVATE_BETA=1).
  *
- * Ren is currently restricted: only @renlabs.io accounts and explicitly
- * allowlisted emails may use the product (dashboard, workspace, builds,
- * agents). Everyone else can still sign in, but lands on /restricted and is
- * refused by every compute endpoint server-side — the UI gate is convenience,
- * the API gate is the enforcement.
+ * Ren is OPEN by default — anyone can create an account and build, with their
+ * first generation free. When the private-beta switch is on, only @renlabs.io
+ * accounts, explicitly allowlisted emails, and admin-approved trial requests
+ * may use the product; everyone else lands on /restricted and is refused by
+ * every compute endpoint server-side.
  *
  * Extend without a deploy via env (comma-separated):
  *   REN_ALLOWED_EMAILS="a@b.com,c@d.com"

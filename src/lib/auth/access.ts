@@ -1,10 +1,16 @@
 /**
- * Access resolution for the private beta — static allowlist + DB grants.
+ * Access resolution — open by default, private beta available as a switch.
  *
- * A user may use Ren when EITHER:
- *   1. their email passes the static allowlist (@renlabs.io, owner, env), or
- *   2. an admin approved their trial request (access_requests.status =
- *      'approved') at admin.renlabs.io/access.
+ * OPEN ACCESS (default): anyone who creates an account may use Ren. Their
+ * first generation is free (FREE_GENERATIONS in credits/config + the
+ * deduct_build_credits RPC consumes it before balance), and billing applies
+ * after that only when REN_BILLING_ENFORCED=1.
+ *
+ * PRIVATE BETA (set REN_PRIVATE_BETA=1): the previous gate — a user may use
+ * Ren when EITHER their email passes the static allowlist (@renlabs.io,
+ * owner, env) OR an admin approved their trial request at
+ * admin.renlabs.io/access. The request flow and the /admin/access dashboard
+ * stay live in both modes, so trial requests always land in the admin panel.
  *
  * Works with any Supabase client (session-scoped server client, the edge
  * middleware client, or the service-role admin client) — the query only reads
@@ -12,6 +18,12 @@
  */
 
 import { isEmailAllowed } from "./allowlist";
+
+/** True when the private-beta gate is switched on. Default: open access. */
+function privateBetaEnforced(): boolean {
+  const v = process.env.REN_PRIVATE_BETA;
+  return v === "1" || v === "true";
+}
 
 /** Minimal structural slice of a Supabase client. Kept deliberately loose
  *  (thenable, not Promise) and applied via an internal cast — the generic
@@ -35,6 +47,9 @@ export async function isUserAllowed(
   userId: string | null | undefined,
   email: string | null | undefined,
 ): Promise<boolean> {
+  // Open access: every signed-in account is allowed. The rest of this
+  // function only runs when the private-beta switch is explicitly on.
+  if (!privateBetaEnforced()) return true;
   if (isEmailAllowed(email)) return true;
   if (!userId) return false;
   try {
