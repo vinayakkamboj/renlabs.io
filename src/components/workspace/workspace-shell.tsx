@@ -11,15 +11,21 @@ import Link from "next/link";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import {
   ArrowLeft,
+  Check,
   Code2,
   Columns2,
+  Copy,
   Database,
   Download,
+  ExternalLink,
   Eye,
   Github,
+  Globe,
   Link2,
+  Loader2,
   Users,
   UserPlus,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { RenMark } from "@/components/ui/wordmark";
@@ -73,6 +79,8 @@ export function WorkspaceShell({
   const [centerView, setCenterView] = useState<CenterView>("preview");
   const [ready, setReady] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewMinting, setPreviewMinting] = useState(false);
   const [pushOpen, setPushOpen] = useState(false);
   const [supabaseOpen, setSupabaseOpen] = useState(false);
 
@@ -97,10 +105,12 @@ export function WorkspaceShell({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
-  // Mint a PUBLIC preview link — a fresh unguessable URL every time — and put
-  // it on the clipboard. Anyone with the link sees the live app, no account
-  // needed: this is how you show someone the site before it's on the internet.
+  // Mint a PUBLIC preview link — a fresh unguessable URL every time — and show
+  // it in a panel with Copy/Open. Anyone with the link sees the live app, no
+  // account needed: how you show someone the site before it's on the internet.
   async function handleShare() {
+    if (previewMinting) return;
+    setPreviewMinting(true);
     try {
       const res = await createPreviewLink(projectId);
       if (!res.ok || !res.path) {
@@ -108,10 +118,12 @@ export function WorkspaceShell({
         return;
       }
       const url = `${window.location.origin}${res.path}`;
-      await navigator.clipboard.writeText(url);
-      toast.success("Public preview link copied — anyone with it can view your site.");
+      setPreviewUrl(url);
+      navigator.clipboard.writeText(url).catch(() => {});
     } catch {
       toast.error("Could not create a preview link.");
+    } finally {
+      setPreviewMinting(false);
     }
   }
 
@@ -181,8 +193,14 @@ export function WorkspaceShell({
         {/* Right: toolbar actions */}
         <div className="flex shrink-0 items-center gap-1">
           <ToolbarButton
-            icon={<Link2 className="size-3.5" />}
-            label="Share"
+            icon={
+              previewMinting ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <Globe className="size-3.5" />
+              )
+            }
+            label="Preview"
             onClick={handleShare}
           />
           <ToolbarButton
@@ -294,6 +312,14 @@ export function WorkspaceShell({
         </PanelGroup>
       </div>
 
+      {previewUrl && (
+        <PreviewLinkModal
+          url={previewUrl}
+          projectName={projectName}
+          onClose={() => setPreviewUrl(null)}
+        />
+      )}
+
       {inviteOpen && (
         <InviteModal
           projectId={projectId}
@@ -367,5 +393,99 @@ function ToolbarButton({
       {icon}
       <span className="hidden sm:inline">{label}</span>
     </button>
+  );
+}
+
+/**
+ * The panel shown after minting a public preview link: the fresh URL with
+ * Copy and Open actions. Every mint is a brand-new unguessable link, so the
+ * user can hand a different one to each person.
+ */
+function PreviewLinkModal({
+  url,
+  projectName,
+  onClose,
+}: {
+  url: string;
+  projectName: string;
+  onClose: () => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  function copy() {
+    navigator.clipboard
+      .writeText(url)
+      .then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1600);
+      })
+      .catch(() => toast.error("Could not copy — select the link manually."));
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-carbon/80 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full max-w-md rounded-2xl border border-carbon-line bg-carbon-raised shadow-2xl">
+        <div className="flex items-center justify-between border-b border-carbon-line px-5 py-4">
+          <div className="flex items-center gap-2.5">
+            <span className="flex size-8 items-center justify-center rounded-lg border border-carbon-line bg-carbon">
+              <Globe className="size-4 text-brass" />
+            </span>
+            <div>
+              <p className="text-[14px] font-medium text-dusk">Public preview link</p>
+              <p className="text-[11.5px] text-dusk-faint">
+                Anyone with this link can view {projectName} — no account needed.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1 text-dusk-faint transition-colors hover:bg-carbon-high hover:text-dusk"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+
+        <div className="space-y-3 p-5">
+          <div className="flex items-center gap-2 rounded-lg border border-carbon-line bg-carbon px-3 py-2.5">
+            <Link2 className="size-3.5 shrink-0 text-dusk-faint" />
+            <input
+              readOnly
+              value={url}
+              onFocus={(e) => e.currentTarget.select()}
+              className="min-w-0 flex-1 bg-transparent font-mono text-[12px] text-dusk outline-none"
+            />
+          </div>
+          <p className="text-[11.5px] leading-relaxed text-dusk-faint">
+            The link always shows the latest version of your app. Hitting
+            Preview again mints a fresh, different link — share a unique one
+            with each person.
+          </p>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-carbon-line px-5 py-3.5">
+          <button
+            onClick={copy}
+            className="flex items-center gap-1.5 rounded-lg border border-carbon-line px-3 py-1.5 text-[12.5px] text-dusk-muted transition-colors hover:text-dusk"
+          >
+            {copied ? (
+              <Check className="size-3.5 text-signal-green" />
+            ) : (
+              <Copy className="size-3.5" />
+            )}
+            {copied ? "Copied" : "Copy link"}
+          </button>
+          <a
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-1.5 rounded-lg bg-brass px-4 py-1.5 text-[12.5px] font-medium text-carbon transition-colors hover:bg-brass-deep"
+          >
+            <ExternalLink className="size-3.5" />
+            Open preview
+          </a>
+        </div>
+      </div>
+    </div>
   );
 }
