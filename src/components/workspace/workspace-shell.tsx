@@ -35,6 +35,7 @@ import { SupabaseConnectModal } from "@/components/workspace/supabase-connect-mo
 import { AgentWorkspace } from "@/components/workspace/agent-workspace";
 import { useWorkspaceStore, loadPersisted } from "@/lib/builder/store";
 import { downloadProjectZip } from "@/lib/builder/download";
+import { createPreviewLink } from "@/lib/actions/preview-links";
 import type { ProjectFile, BuildMessage } from "@/lib/builder/types";
 import { cn } from "@/lib/utils";
 
@@ -96,11 +97,22 @@ export function WorkspaceShell({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
-  function handleShare() {
-    navigator.clipboard
-      .writeText(window.location.href)
-      .then(() => toast.success("Link copied to clipboard"))
-      .catch(() => toast.error("Could not copy link"));
+  // Mint a PUBLIC preview link — a fresh unguessable URL every time — and put
+  // it on the clipboard. Anyone with the link sees the live app, no account
+  // needed: this is how you show someone the site before it's on the internet.
+  async function handleShare() {
+    try {
+      const res = await createPreviewLink(projectId);
+      if (!res.ok || !res.path) {
+        toast.error(res.error ?? "Could not create a preview link.");
+        return;
+      }
+      const url = `${window.location.origin}${res.path}`;
+      await navigator.clipboard.writeText(url);
+      toast.success("Public preview link copied — anyone with it can view your site.");
+    } catch {
+      toast.error("Could not create a preview link.");
+    }
   }
 
   function handleDownload() {
