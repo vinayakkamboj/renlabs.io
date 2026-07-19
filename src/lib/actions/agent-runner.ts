@@ -19,7 +19,7 @@ import { isWithinWorkingHours, nextWorkingWindowStart } from "@/lib/data/agents"
 import { isUserAllowed } from "@/lib/auth/access";
 import { buildEditPrompt, buildRepairPrompt } from "@/lib/builder/prompts";
 import { logActivity, setTaskStatus } from "./agents";
-import { deductAgentRunCredits } from "@/lib/credits/server";
+import { chargeUsage } from "@/lib/credits/server";
 import { CREDITS_PER_AGENT_RUN } from "@/lib/credits/config";
 import { ROLE_PRESETS } from "@/lib/data/agents";
 import { decryptSecret } from "@/lib/crypto/secrets";
@@ -802,10 +802,15 @@ export async function runAgentTask(
     }
 
     // ── Credit budget ────────────────────────────────────────────────────────
-    // Each run is charged to the owner's Ren credit balance. A positive per-agent
-    // budget caps how much of that balance this one agent may spend.
-    const cost = CREDITS_PER_AGENT_RUN;
-    if (ctx.agent.budgetCents > 0 && ctx.agent.spentCents + cost > ctx.agent.budgetCents) {
+    // Usage-based: the run is charged AFTER execution from its ACTUAL token
+    // consumption (same conversion as builds), not a flat fee. The per-agent
+    // budget pre-check uses the typical-run estimate as a floor so an
+    // exhausted agent never even starts a cycle.
+    const estimatedCost = CREDITS_PER_AGENT_RUN;
+    if (
+      ctx.agent.budgetCents > 0 &&
+      ctx.agent.spentCents + estimatedCost > ctx.agent.budgetCents
+    ) {
       // Out of budget: stop the ambient loop too, so it doesn't spin on refusals.
       await ctx.supabase
         .from("agents")
@@ -817,24 +822,37 @@ export async function runAgentTask(
           "This agent has reached its credit budget. Raise its budget to keep it running.",
       };
     }
-    const charge = await deductAgentRunCredits(ctx.userId, ctx.project.id, cost);
-    if (!charge.ok) {
-      if (charge.error === "insufficient_credits") {
-        return {
-          ok: false,
-          error: "Out of Ren credits — top up in Billing to keep your agents running.",
-        };
-      }
-      return { ok: false, error: "Couldn't reserve credits for this run." };
-    }
-    // "skipped" means the credits table/RPC isn't set up (dev) — run for free then.
-    const creditsSpent = "skipped" in charge ? 0 : cost;
-    const creditsBalance = "skipped" in charge ? undefined : charge.balance;
 
     // Execute
     const exec = await executeAgent(ctx);
     const { plan, changedFiles, reportContent } = exec;
     const tokensUsed = exec.tokensUsed + bootstrapTokens;
+
+    // Charge the REAL usage. The runner tracks total tokens; split ~70/30
+    // input/output (agent cycles are context-heavy) for the conversion —
+    // recorded in the usage ledger either way, deducted when billing is on.
+    const charge = await chargeUsage({
+      userId: ctx.userId,
+      projectId: ctx.project.id,
+      kind: "agent_run",
+      inputTokens: Math.round(tokensUsed * 0.7),
+      outputTokens: Math.round(tokensUsed * 0.3),
+    });
+    const creditsSpent =
+      charge.status === "charged" || charge.status === "recorded" ? charge.credits : 0;
+    const creditsBalance = charge.status === "charged" ? charge.balance : undefined;
+    if (charge.status === "insufficient") {
+      // Work is already done and saved to the ren branch — stop the loop so
+      // the agent doesn't keep burning inference the owner can't pay for.
+      await ctx.supabase
+        .from("agents")
+        .update({ loop_enabled: false })
+        .eq("id", ctx.agent.id);
+      return {
+        ok: false,
+        error: "Out of Ren credits — top up in Billing to keep your agents running.",
+      };
+    }
 
     // Save files
     if (changedFiles.length > 0) {

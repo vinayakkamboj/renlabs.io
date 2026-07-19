@@ -14,8 +14,7 @@ export const maxDuration = 300;
 import { NextRequest } from "next/server";
 import { after } from "next/server";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/server";
-import { deductBuildCredits } from "@/lib/credits/server";
-import { CREDITS_PER_BUILD } from "@/lib/credits/config";
+import { requireBuildBalance } from "@/lib/credits/server";
 import { runBuildStep } from "@/lib/builder/job-runner";
 import { isUserAllowed } from "@/lib/auth/access";
 
@@ -86,19 +85,18 @@ export async function POST(req: NextRequest) {
       .eq("id", existing.id);
   }
 
-  // Same credit gate as the streaming path — atomic, server-side.
-  const deduct = await deductBuildCredits(user.id, "v1", body.projectId);
-  if (!deduct.ok) {
-    if (deduct.error === "insufficient_credits") {
-      return Response.json(
-        { error: "insufficient_credits", cost: CREDITS_PER_BUILD.v1 },
-        { status: 402 },
-      );
-    }
-    return Response.json({ error: "credit_check_failed" }, { status: 500 });
+  // Usage-based billing: starting a build needs a POSITIVE balance; each pass
+  // then charges the credits its ACTUAL token usage costs (chargeUsage in the
+  // job runner). No flat fee up front — users pay for what the task consumed.
+  const gate = await requireBuildBalance(user.id);
+  if (!gate.ok) {
+    return Response.json(
+      { error: "insufficient_credits", balance: gate.balance },
+      { status: 402 },
+    );
   }
-  const creditsDeducted = "skipped" in deduct ? 0 : deduct.deducted;
-  const creditsBalance = "skipped" in deduct ? null : deduct.balance;
+  const creditsDeducted = 0;
+  const creditsBalance = gate.balance;
 
   const { data: jobRow, error } = await supabase
     .from("build_jobs")

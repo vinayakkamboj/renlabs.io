@@ -6,7 +6,7 @@ import { getCreditsBalance, ensureCreditsAccount } from "@/lib/credits/server";
 import {
   CREDIT_PACKS,
   CREDITS_PER_BUILD,
-  FREE_GENERATIONS,
+  SIGNUP_BONUS_CREDITS,
   formatCredits,
   packPriceUSD,
 } from "@/lib/credits/config";
@@ -92,10 +92,10 @@ export default async function BillingPage({
         <div className="rounded-xl border border-carbon-line bg-carbon px-5 py-4 text-right">
           <p className="text-[12px] text-dusk-faint">Free on signup</p>
           <p className="mt-0.5 font-serif text-[1.5rem] text-brass tnum">
-            {FREE_GENERATIONS} generation{FREE_GENERATIONS !== 1 ? "s" : ""}
+            {SIGNUP_BONUS_CREDITS} credits
           </p>
           <p className="mt-0.5 text-[11.5px] text-dusk-faint">
-            your first build, on us
+            builds charge only the tokens they actually use
           </p>
         </div>
       </div>

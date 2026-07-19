@@ -214,3 +214,102 @@ export async function checkBuildCredits(
     return { ok: true, skipped: true };
   }
 }
+
+// ── Usage-based billing ───────────────────────────────────────────────────────
+
+import { creditsForUsage } from "./config";
+
+export type ChargeUsageResult =
+  | { status: "charged"; credits: number; balance: number }
+  | { status: "recorded"; credits: number } // billing off — logged, not charged
+  | { status: "insufficient"; credits: number; balance: number }
+  | { status: "skipped" }; // tables/RPC not migrated yet
+
+/**
+ * Record one model call's REAL token usage and charge credits for it.
+ *
+ * The event is ALWAYS written to usage_events (even with billing off) so the
+ * business has an accurate token→credit ledger from day one. The deduction
+ * itself is atomic (row-locked RPC) and only runs when REN_BILLING_ENFORCED=1.
+ * Uses the admin client so background workers (build chain, ambient agents —
+ * no user session) can charge accurately.
+ */
+export async function chargeUsage(opts: {
+  userId: string;
+  projectId?: string | null;
+  jobId?: string | null;
+  kind: "build_pass" | "agent_run";
+  inputTokens: number;
+  outputTokens: number;
+  /** Token counts were estimated from text length (stream cut early). */
+  estimated?: boolean;
+}): Promise<ChargeUsageResult> {
+  if (!isSupabaseConfigured()) return { status: "skipped" };
+  const credits = creditsForUsage(opts.inputTokens, opts.outputTokens);
+  const supabase = createAdminClient();
+
+  // Ledger first — never lose the record even if the deduct fails.
+  try {
+    await supabase.from("usage_events").insert({
+      user_id: opts.userId,
+      project_id: opts.projectId ?? null,
+      job_id: opts.jobId ?? null,
+      kind: opts.kind,
+      input_tokens: Math.max(0, Math.round(opts.inputTokens)),
+      output_tokens: Math.max(0, Math.round(opts.outputTokens)),
+      credits,
+      estimated: opts.estimated === true,
+    });
+  } catch {
+    /* table missing — dev mode */
+  }
+
+  if (!billingEnforced()) return { status: "recorded", credits };
+
+  try {
+    const { data, error } = await supabase.rpc("deduct_usage_credits", {
+      p_user_id: opts.userId,
+      p_amount: credits,
+    });
+    if (error) {
+      if (error.code === "PGRST202" || error.message?.includes("does not exist")) {
+        return { status: "skipped" };
+      }
+      return { status: "skipped" };
+    }
+    const result = data as { ok: boolean; error?: string; balance?: number };
+    if (result.ok) {
+      return { status: "charged", credits, balance: result.balance ?? 0 };
+    }
+    if (result.error === "insufficient_credits") {
+      return { status: "insufficient", credits, balance: result.balance ?? 0 };
+    }
+    return { status: "skipped" };
+  } catch {
+    return { status: "skipped" };
+  }
+}
+
+/**
+ * Gate for STARTING a build under usage billing: the user just needs a
+ * positive balance (each pass then charges its real cost as it happens).
+ * Skips cleanly when billing is off or tables aren't migrated.
+ */
+export async function requireBuildBalance(
+  userId: string,
+): Promise<{ ok: true; balance: number | null } | { ok: false; balance: number }> {
+  if (!isSupabaseConfigured() || !billingEnforced()) return { ok: true, balance: null };
+  try {
+    const supabase = createAdminClient();
+    const { data } = await supabase
+      .from("user_credits")
+      .select("balance")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (!data) return { ok: true, balance: null }; // row created lazily with signup bonus
+    const balance = (data.balance as number) ?? 0;
+    return balance > 0 ? { ok: true, balance } : { ok: false, balance };
+  } catch {
+    return { ok: true, balance: null };
+  }
+}

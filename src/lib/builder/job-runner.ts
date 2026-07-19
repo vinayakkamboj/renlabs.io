@@ -39,6 +39,7 @@ import {
   detectDesignIssues,
   describeDesignIssues,
 } from "./design-lint";
+import { chargeUsage } from "@/lib/credits/server";
 import { createBaseTemplate } from "./base-template";
 import type { ProjectFile } from "./types";
 
@@ -56,6 +57,7 @@ interface JobRow {
   changed_paths: string[] | null;
   input_tokens: number;
   output_tokens: number;
+  credits_deducted: number | null;
   state: JobState | null;
 }
 
@@ -75,6 +77,8 @@ interface JobState {
   stubbedCount?: number;
   /** The one bounded design-QA repair pass has already run — never loop it. */
   designPassDone?: boolean;
+  /** Automatic stub-completion passes taken beyond maxPasses (bounded). */
+  extraPasses?: number;
 }
 
 // How many consecutive zero-content attempts we tolerate before giving up.
@@ -273,7 +277,7 @@ export async function runBuildStep(jobId: string, origin: string): Promise<void>
   const { data: jobData, error: fetchError } = await supabase
     .from("build_jobs")
     .select(
-      "id, user_id, project_id, status, cancelled, prompt, messages, is_first_build, changed_paths, input_tokens, output_tokens, state",
+      "id, user_id, project_id, status, cancelled, prompt, messages, is_first_build, changed_paths, input_tokens, output_tokens, credits_deducted, state",
     )
     .eq("id", jobId)
     .single();
@@ -405,13 +409,47 @@ export async function runBuildStep(jobId: string, origin: string): Promise<void>
       });
     }
 
+    // ── USAGE BILLING: charge THIS pass's real token consumption ───────────
+    // When the stream was cut before the provider reported usage, estimate
+    // conservatively from text length (~4 chars/token) and mark it estimated
+    // in the ledger. Every pass is recorded; deduction applies when billing
+    // is enforced. Running dry mid-build stops the job with a clear buy
+    // message — everything already built stays saved.
+    const passIn =
+      res.usage?.inputTokens ??
+      Math.ceil((system.length + contextPack.length + job.prompt.length) / 4);
+    const passOut = res.usage?.outputTokens ?? Math.ceil(res.text.length / 4);
+    const estimated = !res.usage;
+
     await supabase
       .from("build_jobs")
       .update({
-        input_tokens: job.input_tokens + (res.usage?.inputTokens ?? 0),
-        output_tokens: job.output_tokens + (res.usage?.outputTokens ?? 0),
+        input_tokens: job.input_tokens + passIn,
+        output_tokens: job.output_tokens + passOut,
       })
       .eq("id", jobId);
+
+    const charge = await chargeUsage({
+      userId: job.user_id,
+      projectId: job.project_id,
+      jobId,
+      kind: "build_pass",
+      inputTokens: passIn,
+      outputTokens: passOut,
+      estimated,
+    });
+    if (charge.status === "charged" || charge.status === "recorded" || charge.status === "insufficient") {
+      await supabase
+        .from("build_jobs")
+        .update({ credits_deducted: (job.credits_deducted ?? 0) + charge.credits })
+        .eq("id", jobId);
+    }
+    if (charge.status === "insufficient") {
+      await fail(
+        "You've used up your credits. Buy credits in Billing to continue — everything built so far is saved, and the build will pick up where it left off.",
+      );
+      return;
+    }
 
     const plan = parseFilePatchPlan(res.text);
 
@@ -545,6 +583,25 @@ export async function runBuildStep(jobId: string, origin: string): Promise<void>
         return;
       }
       state.designPassDone = true; // reviewed clean — don't re-lint later passes
+    }
+
+    // ── AUTO-CONTINUE: placeholder stubs remaining means the build is NOT
+    // done — take bounded extra completion passes automatically instead of
+    // finishing with "say continue the build" homework for the user.
+    const wouldFinish = !incomplete || pass + 1 >= maxPasses;
+    if (wouldFinish && stubbed.length > 0 && (state.extraPasses ?? 0) < 3) {
+      state.extraPasses = (state.extraPasses ?? 0) + 1;
+      state.pass = pass + 1;
+      state.emptyAttempts = 0;
+      state.repairNote = `These files are placeholder stubs and must now be FULLY implemented per the original request: ${stubbed.join(", ")}. Replace each stub with its complete real page/component. Output ONLY these files as a <file_patches> block.`;
+      state.lockUntil = 0;
+      await saveState(supabase, jobId, state);
+      await log(supabase, jobId, {
+        kind: "repairing",
+        text: `Continuing automatically — ${stubbed.length} placeholder page${stubbed.length === 1 ? "" : "s"} left to build`,
+      }, "repairing");
+      await chainNext(supabase, jobId, origin);
+      return;
     }
 
     // ── DECIDE: done, or chain the next pass ────────────────────────────────

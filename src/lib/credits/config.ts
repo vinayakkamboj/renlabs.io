@@ -45,12 +45,40 @@ export const CREDITS_PER_AGENT_RUN = 40;
 export const DEFAULT_AGENT_BUDGET_CREDITS = 1000;
 
 // ---------------------------------------------------------------------------
-// Free tier — new users get one free generation (not free credits)
+// Free tier — new accounts get 50 free credits (NOT a free generation).
+// Builds burn those credits at the real usage-based rate below; when they run
+// out, the user is asked to buy credits. No unmetered builds.
 // ---------------------------------------------------------------------------
-export const FREE_GENERATIONS = 1;
+export const FREE_GENERATIONS = 0;
 
-/** Legacy: no credits are granted on signup anymore — the free tier is 1 build. */
-export const SIGNUP_BONUS_CREDITS = 0;
+/** Credits granted once at signup. ~1-2 typical builds at usage-based rates. */
+export const SIGNUP_BONUS_CREDITS = 50;
+
+// ---------------------------------------------------------------------------
+// Usage-based pricing — credits are charged from ACTUAL token consumption,
+// pass by pass, not a flat fee per build. This is what guarantees no loss:
+// every charged credit is derived from measured Fireworks tokens times a
+// margin. All knobs are env-tunable so price changes never need a deploy.
+//
+//   cost_usd = (in_tokens * IN_$_PER_M + out_tokens * OUT_$_PER_M) / 1e6
+//   credits  = ceil(cost_usd * MARGIN / USD_PER_CREDIT), minimum 1
+//
+// Defaults: GLM 5.2 serverless list pricing, 1 credit = $0.01, 3x margin.
+// ---------------------------------------------------------------------------
+const num = (name: string, fallback: number) => {
+  const v = Number(process.env[name]);
+  return Number.isFinite(v) && v > 0 ? v : fallback;
+};
+
+export function creditsForUsage(inputTokens: number, outputTokens: number): number {
+  const inPerM = num("FIREWORKS_INPUT_USD_PER_M", 0.55);
+  const outPerM = num("FIREWORKS_OUTPUT_USD_PER_M", 2.19);
+  const usdPerCredit = num("REN_USD_PER_CREDIT", 0.01);
+  const margin = num("REN_BILLING_MARGIN", 3);
+  const costUsd =
+    (Math.max(0, inputTokens) * inPerM + Math.max(0, outputTokens) * outPerM) / 1_000_000;
+  return Math.max(1, Math.ceil((costUsd * margin) / usdPerCredit));
+}
 
 // ---------------------------------------------------------------------------
 // Credit purchase packs
