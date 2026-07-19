@@ -92,6 +92,18 @@ interface Step {
 const FORMAT_NOTE =
   "Output the application NOW as a single <file_patches> JSON block with the FULL contents of every file. No prose, no questions — only the block.";
 
+// Auto-decomposition: when an attempt produces ZERO files, retrying the same
+// giant ask verbatim just fails the same way — the model spends its whole
+// time slice reasoning about everything at once. So each retry NARROWS the
+// pass instead: first to a bounded foundation, then to an emergency-minimal
+// scaffold. The chain's normal continuation machinery (missing App.tsx,
+// dangling imports, time slices) then builds the rest of the request on top,
+// pass by pass — the huge brief stays in context the whole way.
+const SCOPE_FOUNDATION_NOTE =
+  "This request is LARGE — do NOT attempt the whole product in this pass. Build ONLY the foundation, completely: (1) src/index.css with the full design-token system for this brand, (2) the src/data/*.ts files with typed content, (3) src/App.tsx wiring HashRouter routes to simple placeholder pages you also create in this pass. MAXIMUM 8 files. Later passes will replace the placeholders with the full pages. Keep planning minimal — begin the <file_patches> block immediately.";
+const SCOPE_MINIMAL_NOTE =
+  "Emergency minimal pass: output AT MOST 4 files, under 400 total lines — src/App.tsx (routes with small inline placeholder pages), src/index.css, and at most two data files. Nothing else. No prose. Start your response with <file_patches>.";
+
 // A pass is bounded by TIME, not just tokens: the function is killed at ~300s
 // regardless of token budgets, and on GLM the (hidden) reasoning tokens count
 // against max_tokens — so a token cap small enough to always fit in time also
@@ -348,10 +360,10 @@ export async function runBuildStep(jobId: string, origin: string): Promise<void>
     const maxPasses = state.big ? 5 : 2;
 
     // ── GENERATE (one model call, heartbeat while it runs) ──────────────────
-    const system = state.repairNote
-      ? buildRepairPrompt(state.repairNote)
-      : firstBuild
-        ? buildNewProjectPrompt()
+    const system = firstBuild
+      ? buildNewProjectPrompt()
+      : state.repairNote
+        ? buildRepairPrompt(state.repairNote)
         : buildEditPrompt();
     const contextPack = buildContextPack(files, job.prompt, {});
     const history = (job.messages ?? []).slice(-12);
@@ -412,14 +424,20 @@ export async function runBuildStep(jobId: string, origin: string): Promise<void>
       const attempts = (state.emptyAttempts ?? 0) + 1;
       if (attempts < MAX_EMPTY_ATTEMPTS) {
         state.emptyAttempts = attempts;
-        state.repairNote = FORMAT_NOTE;
+        // Narrow the ask each retry rather than repeating the identical one:
+        // retry 1 → bounded foundation; retry 2 → emergency-minimal scaffold.
+        state.repairNote =
+          attempts === 1
+            ? `${FORMAT_NOTE}\n\n${SCOPE_FOUNDATION_NOTE}`
+            : `${FORMAT_NOTE}\n\n${SCOPE_MINIMAL_NOTE}`;
         state.lockUntil = 0;
         await saveState(supabase, jobId, state);
         await log(supabase, jobId, {
           kind: "writing",
-          text: timeSliced
-            ? `Astra spent the full pass reasoning and hadn't started writing yet — retrying (${attempts}/${MAX_EMPTY_ATTEMPTS - 1})`
-            : `First response had no files — asking Astra to emit the app directly (${attempts}/${MAX_EMPTY_ATTEMPTS - 1})`,
+          text:
+            attempts === 1
+              ? "The request is big — narrowing this pass to the app's foundation first"
+              : "Still no files — trying a minimal scaffold this pass",
         });
         await chainNext(supabase, jobId, origin);
         return;
